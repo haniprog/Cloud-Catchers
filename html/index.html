@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cloud Catchers</title>
+  <link rel="stylesheet" href="../css/styles.css">
+</head>
+<body>
+  <main class="app-shell" id="app-shell">
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">Cloud Catchers</p>
+        <h1>Frog platformer in the browser</h1>
+      </div>
+      <div class="header-actions">
+        <button id="fullscreen-btn" type="button">Fullscreen</button>
+        <button id="restart-btn" type="button">Restart</button>
+      </div>
+    </header>
+
+    <section class="game-frame" aria-label="Cloud Catchers game">
+      <canvas id="game-canvas" width="1280" height="720" aria-label="Cloud Catchers canvas"></canvas>
+    </section>
+
+    <footer class="app-footer">
+      <span>Move with Arrow keys or drag.</span>
+      <span>F11 or the fullscreen button toggles fullscreen. Escape exits fullscreen.</span>
+    </footer>
+  </main>
+
+  <script src="../js/config.js"></script>
+  <script src="../js/theme.js"></script>
+  <script src="../js/ai_algorithms.js"></script>
+  <script src="../js/storage.js"></script>
+  <script src="../js/game.js"></script>
+  <script src="../js/main.js"></script>
+</body>
+</html>

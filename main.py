@@ -9,7 +9,9 @@ import json
 import os
 import random
 import tkinter as tk
-from collections import deque
+
+from ai_algorithms import CloudGraph, IDSSequenceGenerator
+from ui_theme import HOME_THEME, SELECT_THEME
 
 
 # ============================================================================
@@ -30,9 +32,10 @@ class GameConfig:
     ANALYTICS_FILE = "analytics.json"
     
     # Cloud generation - number of clouds and spacing
-    NUM_CLOUDS = 6
-    CLOUD_SPACING = 120  # Pixels between clouds horizontally
-    CLOUD_START_X = 100
+    NUM_CLOUD_ROWS = 7
+    NUM_CLOUD_COLUMNS = 4
+    CLOUD_ROW_GAP = 68
+    CLOUD_JUMP_RANGE = 185
     
     # IDS parameters for obstacle sequence generation
     IDS_MAX_DEPTH = 8  # Maximum obstacles in a sequence
@@ -41,170 +44,6 @@ class GameConfig:
     OBSTACLE_GROUPS_MIN = 2  # Minimum obstacles per sequence
     OBSTACLE_GROUPS_MAX = 5  # Maximum obstacles per sequence
     MAX_FALL_TIME = 10.0  # Maximum seconds before obstacle falls off screen
-
-
-# ============================================================================
-# CLOUD GRAPH - Models the game world as a graph of interconnected platforms
-# ============================================================================
-class CloudGraph:
-    """
-    Represents clouds as nodes in a graph where edges represent valid jumps.
-    This is the state-space environment used by BFS for survivability validation.
-    """
-    def __init__(self):
-        # nodes[i] = (x_pos, y_pos) of cloud i
-        self.nodes = []
-        # edges[i] = list of reachable cloud indices from cloud i
-        self.edges = []
-        # Generate cloud layout
-        self._generate_clouds()
-        # Build adjacency based on jumping distance
-        self._build_edges()
-    
-    def _generate_clouds(self):
-        """
-        Create evenly-spaced clouds from left to right across the screen.
-        Each cloud is a potential landing platform for the frog.
-        """
-        for i in range(GameConfig.NUM_CLOUDS):
-            x = GameConfig.CLOUD_START_X + i * GameConfig.CLOUD_SPACING
-            y = GameConfig.GROUND_Y - 80  # Clouds elevated above ground
-            self.nodes.append((x, y))
-    
-    def _build_edges(self):
-        """
-        Connect clouds based on jump distance.
-        Frog can jump to adjacent clouds within jumping range.
-        """
-        self.edges = [[] for _ in range(len(self.nodes))]
-        
-        # For each cloud, find which clouds are reachable from it
-        for i in range(len(self.nodes)):
-            for j in range(len(self.nodes)):
-                if i != j:
-                    x1, y1 = self.nodes[i]
-                    x2, y2 = self.nodes[j]
-                    # Distance between clouds
-                    distance = abs(x2 - x1)
-                    # Frog can jump up to 150 pixels horizontally
-                    if distance <= 150:
-                        self.edges[i].append(j)
-    
-    def get_node_position(self, node_id):
-        """Returns (x, y) position of a cloud node."""
-        return self.nodes[node_id]
-    
-    def get_reachable_nodes(self, node_id):
-        """Returns list of cloud indices reachable from given cloud."""
-        return self.edges[node_id]
-
-
-# ============================================================================
-# BREADTH-FIRST SEARCH (BFS) - Validates obstacle sequence survivability
-# ============================================================================
-class BFSSolver:
-    """
-    Uses BFS to check if a frog can survive a sequence of falling obstacles.
-    Ensures there's always a safe path of clouds to land on.
-    """
-    
-    def is_sequence_survivable(self, cloud_graph, obstacle_sequence, start_cloud):
-        """
-        Check if frog can navigate all obstacles from start_cloud.
-        
-        Args:
-            cloud_graph: CloudGraph object representing cloud network
-            obstacle_sequence: List of (cloud_id, time) tuples for obstacles
-            start_cloud: Starting cloud index
-        
-        Returns:
-            True if sequence is survivable, False otherwise
-        """
-        # BFS to verify frog can reach safe clouds
-        visited = set()
-        queue = deque([start_cloud])
-        visited.add(start_cloud)
-        
-        # Standard BFS traversal - ensure reachable clouds exist
-        while queue:
-            current_cloud = queue.popleft()
-            
-            # Expand to neighboring clouds
-            for neighbor in cloud_graph.get_reachable_nodes(current_cloud):
-                if neighbor not in visited:
-                    visited.add(neighbor)
-                    queue.append(neighbor)
-        
-        # Sequence is survivable if we have at least 2 reachable clouds
-        return len(visited) >= 2
-
-
-# ============================================================================
-# ITERATIVE DEEPENING SEARCH (IDS) - Generates obstacle sequences
-# ============================================================================
-class IDSSequenceGenerator:
-    """
-    Uses IDS to systematically generate falling star obstacle sequences that are
-    challenging but survivable. Starts simple and increases complexity.
-    """
-    
-    def __init__(self, cloud_graph):
-        self.cloud_graph = cloud_graph
-        self.bfs_solver = BFSSolver()
-        self.frog_start_cloud = 0  # Frog always starts at first cloud
-    
-    def generate_sequence(self, target_depth, max_attempts=20):
-        """
-        Generate a valid obstacle sequence using IDS up to target_depth.
-        
-        Args:
-            target_depth: Number of obstacles in sequence to generate
-            max_attempts: Maximum attempts before giving up
-        
-        Returns:
-            List of (cloud_id, time) tuples representing obstacle positions
-        """
-        # Perform depth-limited search starting from depth 1
-        for depth in range(1, target_depth + 1):
-            for attempt in range(max_attempts):
-                # Generate a random sequence at this depth
-                sequence = self._generate_random_sequence(depth)
-                
-                # Validate using BFS
-                if self.bfs_solver.is_sequence_survivable(
-                    self.cloud_graph, sequence, self.frog_start_cloud
-                ):
-                    return sequence
-        
-        # Fallback: return a simple guaranteed-survivable sequence
-        return self._generate_simple_fallback_sequence()
-    
-    def _generate_random_sequence(self, depth):
-        """
-        Create a random sequence of 'depth' obstacles across clouds.
-        Each obstacle is assigned a random cloud and spawn time.
-        """
-        sequence = []
-        current_time = 1.0
-        
-        for _ in range(depth):
-            # Random cloud and time for this obstacle
-            cloud_id = random.randint(0, len(self.cloud_graph.nodes) - 1)
-            sequence.append((cloud_id, current_time))
-            # Space obstacles apart in time to give frog time to dodge
-            current_time += random.uniform(2.0, 4.0)
-        
-        return sequence
-    
-    def _generate_simple_fallback_sequence(self):
-        """
-        Generate a guaranteed-survivable sequence for reliability.
-        """
-        return [
-            (1, 1.0),
-            (3, 3.5),
-            (5, 6.0),
-        ]
 
 
 # ============================================================================
@@ -334,11 +173,11 @@ class Frog:
         self.vy = 0  # Vertical velocity
         self.on_ground = True
         self.current_cloud = 0  # Which cloud frog is on
+        self.current_cloud_row = 0
         
-        # Draw frog as a green sprite with eyes
-        # Body: green rectangle
-        self.body_id = canvas.create_rectangle(
-            0, 0, 0, 0, fill="#2ecc71", outline="#27ae60", width=2, tags="frog"
+        # Draw frog as a green rounded sprite with eyes and smiling mouth
+        self.body_id = canvas.create_oval(
+            0, 0, 0, 0, fill="#5fd08a", outline="#2fa86a", width=2, tags="frog"
         )
         # Eyes: two white circles
         self.eye_left_id = canvas.create_oval(
@@ -354,15 +193,18 @@ class Frog:
         self.pupil_right_id = canvas.create_oval(
             0, 0, 0, 0, fill="black", tags="frog"
         )
+        # Small smiling mouth (arc)
+        self.mouth_id = canvas.create_arc(0, 0, 0, 0, start=180, extent=180, style="arc", outline="#1f6b3f", width=2, tags="frog")
     
     def reset(self):
         """Reset frog to starting position and state."""
         self.x = self.cloud_graph.nodes[0][0]
         self.y = self.cloud_graph.nodes[0][1]
         self.vx = 0
-        self.vy = 0
-        self.on_ground = True
+        self.vy = -14  # Auto-jump immediately so the game starts moving on its own
+        self.on_ground = False
         self.current_cloud = 0
+        self.current_cloud_row = 0
     
     def move_left(self, event=None):
         """Handle left arrow key press - hop left."""
@@ -377,10 +219,8 @@ class Frog:
         self.vx = 0
     
     def jump(self, event=None):
-        """Handle space bar - frog jumps if on ground."""
-        if self.on_ground:
-            self.vy = -14  # Jump velocity (upward)
-            self.on_ground = False
+        """Manual jump is disabled; jumping happens automatically when landing."""
+        return
     
     def update(self, cloud_platforms):
         """
@@ -414,18 +254,27 @@ class Frog:
             cloud_x, cloud_y = cloud.x, cloud.y
             if (abs(self.x - cloud_x) < 50 and 
                 self.vy > 0 and 
-                abs(self.y - cloud_y) < 40):
+                abs(self.y - cloud_y) < 40 and
+                cloud.row in (self.current_cloud_row, self.current_cloud_row + 1)):
                 
                 # Land on cloud
                 self.y = cloud_y - 40
-                self.vy = 0
-                self.on_ground = True
+                self.vy = -14  # Auto-jump upward immediately after landing
+                self.on_ground = False
                 self.current_cloud = i
+                self.current_cloud_row = cloud.row
                 cloud.touch()  # Cloud starts disappearing timer
                 landing_on_cloud = True
+                break
+
+            self.on_ground = landing_on_cloud and self.vy < 0
         
         # Check collision with ground at bottom (death - fell off)
-        if self.y >= GameConfig.HEIGHT:
+        try:
+            canvas_h = int(self.canvas.winfo_height())
+        except Exception:
+            canvas_h = GameConfig.HEIGHT
+        if self.y >= canvas_h:
             return False  # Frog died - fell off screen
         
         # Draw frog at new position
@@ -434,11 +283,11 @@ class Frog:
     
     def _draw_frog(self):
         """Draw frog sprite at current position."""
-        # Body - main rectangle
+        # Body - main oval
         self.canvas.coords(
             self.body_id,
-            self.x - 15, self.y - 12,
-            self.x + 15, self.y + 8
+            self.x - 16, self.y - 14,
+            self.x + 16, self.y + 10
         )
         # Left eye
         self.canvas.coords(
@@ -464,6 +313,12 @@ class Frog:
             self.x + 7, self.y - 8,
             self.x + 9, self.y - 6
         )
+        # Mouth - small arc under eyes
+        self.canvas.coords(
+            self.mouth_id,
+            self.x - 8, self.y - 2,
+            self.x + 8, self.y + 8
+        )
 
 
 # ============================================================================
@@ -476,15 +331,17 @@ class CloudPlatform:
     After timeout, the cloud fades and becomes non-solid.
     """
     
-    def __init__(self, canvas, x, y, cloud_id):
+    def __init__(self, canvas, x, y, cloud_id, row):
         self.canvas = canvas
         self.x = x
         self.y = y
         self.cloud_id = cloud_id
+        self.row = row
         
         # Cloud state: how long until it disappears (in seconds)
         self.disappear_timer = None  # None = not touched yet
-        self.disappear_delay = 2.5  # Seconds before cloud vanishes after landing
+        # Clouds should disappear within 5 seconds of being stepped on
+        self.disappear_delay = min(5.0, max(1.2, 2.6 - row * 0.18))
         
         # Visual representation - cloud oval
         self.id = canvas.create_oval(
@@ -561,9 +418,9 @@ class FallingObstacle:
             fill="#ff6b6b", outline="#cc0000", width=2, tags="hazard"
         )
     
-    def update(self):
+    def update(self, speed_boost=0.0):
         """Update falling position downward."""
-        self.y += self.speed
+        self.y += self.speed + speed_boost
         # Redraw star at new position using polygon points
         self.canvas.coords(
             self.id,
@@ -581,7 +438,11 @@ class FallingObstacle:
     
     def off_screen(self):
         """Check if star has fallen off bottom of screen."""
-        return self.y > GameConfig.HEIGHT + 50
+        try:
+            canvas_h = int(self.canvas.winfo_height())
+        except Exception:
+            canvas_h = GameConfig.HEIGHT
+        return self.y > canvas_h + 50
     
     def collides_with(self, frog):
         """
@@ -607,20 +468,46 @@ class CloudCatcherGame:
         # Initialize Tkinter window
         self.root = tk.Tk()
         self.root.title("Cloud Catchers - Frog Platformer")
-        self.root.resizable(False, False)
+        self.root.resizable(True, True)
+        self.root.configure(bg=HOME_THEME["page_bg"])
+
+        self.root.update_idletasks()
+        self.screen_width = self.root.winfo_screenwidth()
+        self.screen_height = self.root.winfo_screenheight()
+
+        window_width = min(1280, max(1024, self.screen_width - 120))
+        window_height = min(720, max(640, self.screen_height - 120))
+        self.window_width = window_width
+        self.window_height = window_height
+        self.is_fullscreen = False
+        self.root.geometry(f"{window_width}x{window_height}")
+        self.root.minsize(960, 600)
         
         # Create canvas for rendering
         self.canvas = tk.Canvas(
             self.root,
-            width=GameConfig.WIDTH,
-            height=GameConfig.HEIGHT,
-            bg="#87ceeb",  # Sky blue
+            width=window_width,
+            height=window_height,
+            bg="#0c0520",
             highlightthickness=0
         )
-        self.canvas.pack()
+        self.canvas.place(x=0, y=0, width=window_width, height=window_height)
+        # Ensure window/canvas has focus so key events are received
+        try:
+            self.root.focus_set()
+            self.canvas.focus_set()
+        except Exception:
+            pass
         
         # Initialize game systems
-        self.cloud_graph = CloudGraph()  # Create cloud network
+        self.cloud_graph = CloudGraph(
+            GameConfig.WIDTH,
+            GameConfig.GROUND_Y,
+            rows=GameConfig.NUM_CLOUD_ROWS,
+            columns=GameConfig.NUM_CLOUD_COLUMNS,
+            row_gap=GameConfig.CLOUD_ROW_GAP,
+            jump_range=GameConfig.CLOUD_JUMP_RANGE,
+        )  # Cloud network used by BFS/IDS/DLS
         self.sequence_generator = IDSSequenceGenerator(self.cloud_graph)  # IDS generator
         self.data_layer = DataLayer()  # Save/load system
         self.analytics = AnalyticsService()  # Statistics tracking
@@ -635,44 +522,519 @@ class CloudCatcherGame:
         self.sequence = None  # Current obstacle sequence
         self.sequence_time = 0.0  # Time elapsed in current sequence
         self.game_over = False
+        self.on_home_screen = True
+        self.on_select_screen = False
+        self.selected_catcher = 0
+        self.select_card_bounds = []
+        # Continuous hazard spawner state
+        self.last_hazard_spawn = 0.0
+        self.hazard_spawn_interval = 1.6  # base seconds between spawns (will scale)
         
         # Best score tracking
         self.best_score = self.saved_data["best_score"]
         
-        # Create cloud platforms
-        for i, cloud_pos in enumerate(self.cloud_graph.nodes):
-            platform = CloudPlatform(self.canvas, cloud_pos[0], cloud_pos[1], i)
-            self.cloud_platforms.append(platform)
+        # Build the initial world to match the actual canvas dimensions
+        self._rebuild_world()
         
         # Setup input handlers
         self.draw_scene()
+        self.draw_home_screen()
         self.bind_controls()
-        self.start_game()
+        self.canvas.bind("<Button-1>", self._on_canvas_click)
+        self.root.bind("<Configure>", self._on_root_configure)
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
     
     def draw_scene(self):
         """Draw static scene elements."""
         # Draw ground
         self.canvas.delete("background")
+        width, height = self._display_size()
+
+        # Sky gradient and decorative clouds for gameplay view
+        self._draw_game_gradient(width, height)
+        self._draw_game_clouds(width, height)
+
+        # Ground strip - draw as 'ground' so it can move with the world when camera scrolls
+        ground_y = min(height - 80, GameConfig.GROUND_Y)
+        self.canvas.create_rectangle(0, ground_y, width, height, fill="#2f8f4a", outline="", tags="ground")
+        # Ensure background/ground sit behind gameplay items
+        try:
+            self.canvas.tag_lower("background")
+            self.canvas.tag_lower("ground")
+        except Exception:
+            pass
+        # Raise interactive items so they remain visible
+        try:
+            self.canvas.tag_raise("platform")
+            self.canvas.tag_raise("frog")
+            self.canvas.tag_raise("hazard")
+            self.canvas.tag_raise("ui")
+        except Exception:
+            pass
+
+    def _draw_game_clouds(self, width, height):
+        """Draw decorative soft clouds for the gameplay background."""
+        cloud_color = "#ffffff"
+        specs = [
+            (int(width * 0.12), int(height * 0.18), 1.0),
+            (int(width * 0.35), int(height * 0.10), 0.8),
+            (int(width * 0.6), int(height * 0.22), 1.1),
+            (int(width * 0.82), int(height * 0.15), 0.7),
+            (int(width * 0.75), int(height * 0.45), 1.2),
+        ]
+        for x, y, s in specs:
+            rx = int(34 * s)
+            ry = int(20 * s)
+            self.canvas.create_oval(x - rx, y - ry, x + rx, y + ry, fill=cloud_color, outline="", tags="background")
+            self.canvas.create_oval(x + int(20 * s) - rx, y - int(12 * s) - ry, x + int(20 * s) + rx, y - int(12 * s) + ry, fill=cloud_color, outline="", tags="background")
+            self.canvas.create_oval(x + int(40 * s) - rx, y + int(6 * s) - ry, x + int(40 * s) + rx, y + int(6 * s) + ry, fill=cloud_color, outline="", tags="background")
+
+    def _draw_game_gradient(self, width, height):
+        """Draw a soft vertical sky gradient for gameplay."""
+        # Gradient from sky blue at top to soft green near ground
+        colors = [
+            "#aee1ff", "#bfe9ff", "#d6f5ff", "#e8fbf0", "#e6f7e6", "#d6f0d6"
+        ]
+        stripe_h = max(1, height // len(colors))
+        y = 0
+        for c in colors:
+            ny = min(height, y + stripe_h)
+            self.canvas.create_rectangle(0, y, width, ny, fill=c, outline="", tags="background")
+            y = ny
+
+    def draw_home_screen(self):
+        """Draw a Doodle Jump-inspired intro screen before gameplay starts."""
+        self.canvas.delete("home")
+
+        width, height = self._display_size()
+        card_margin_x = int(width * 0.05)
+        card_margin_y = int(height * 0.05)
+        card_x1 = card_margin_x
+        card_y1 = card_margin_y
+        card_x2 = width - card_margin_x
+        card_y2 = height - card_margin_y
+        card_radius = 28
+
+        # Outer page background.
         self.canvas.create_rectangle(
-            0, GameConfig.GROUND_Y, GameConfig.WIDTH, GameConfig.HEIGHT,
-            fill="#77c36f", outline="", tags="background"
+            0, 0, width, height,
+            fill=HOME_THEME["page_bg"], outline="", tags="home"
         )
-        # Draw title
+
+        # A warm vertical gradient inside the main card.
+        self._draw_home_gradient_card(card_x1, card_y1, card_x2, card_y2)
+
+        # Card frame.
+        self._draw_home_rounded_rect(card_x1, card_y1, card_x2, card_y2, card_radius, fill="", outline=HOME_THEME["card_outline"], width=2)
+
+        # Small twinkling stars.
+        sparkle_points = [
+            (card_x1 + 70, card_y1 + 60), (card_x1 + 145, card_y1 + 160), (card_x1 + 320, card_y1 + 230),
+            (card_x1 + 500, card_y1 + 120), (card_x1 + 680, card_y1 + 55), (card_x1 + 830, card_y1 + 170),
+            (card_x1 + 1060, card_y1 + 40), (card_x1 + 950, card_y1 + 410), (card_x1 + 200, card_y1 + 95)
+        ]
+        for x, y in sparkle_points:
+            self.canvas.create_oval(x, y, x + 3, y + 3, fill=HOME_THEME["sparkle"], outline="", tags="home")
+
+        # Soft cloud clusters inspired by the reference image.
+        cloud_specs = [
+            (card_x1 + 35, card_y1 + 255, 1.15),
+            (card_x1 + 760, card_y1 + 280, 1.35),
+            (card_x1 + 930, card_y1 + 470, 1.10),
+            (card_x1 + 520, card_y1 + 510, 0.78),
+        ]
+        for x, y, scale in cloud_specs:
+            self._draw_home_cloud(x, y, scale)
+
+        # Sun glow behind the button.
+        sun_cx = width // 2
+        sun_cy = card_y1 + int((card_y2 - card_y1) * 0.62)
+        self.canvas.create_oval(sun_cx - 95, sun_cy - 95, sun_cx + 95, sun_cy + 95, fill=HOME_THEME["sun_outer"], outline="", tags="home")
+        self.canvas.create_oval(sun_cx - 72, sun_cy - 72, sun_cx + 72, sun_cy + 72, fill=HOME_THEME["sun_mid"], outline="", tags="home")
+        self.canvas.create_oval(sun_cx - 45, sun_cy - 45, sun_cx + 45, sun_cy + 45, fill=HOME_THEME["sun_inner"], outline="", tags="home")
+
+        # Main title inside the card.
         self.canvas.create_text(
-            12, 12, anchor="nw", text="Cloud Catchers - Frog Platformer",
-            font=("Arial", 18, "bold"), fill="white", tags="background"
+            width // 2, card_y1 + int((card_y2 - card_y1) * 0.42),
+            text="Cloud Catchers",
+            font=HOME_THEME["title_font"],
+            fill=HOME_THEME["title_main"],
+            tags="home"
         )
+        self.canvas.create_text(
+            width // 2, card_y1 + int((card_y2 - card_y1) * 0.50),
+            text="HOP THE SKY · DODGE THE STARS",
+            font=HOME_THEME["subtitle_font"],
+            fill=HOME_THEME["subtitle_main"],
+            tags="home"
+        )
+
+        # Characters on the home screen.
+        emoji_y = card_y1 + int((card_y2 - card_y1) * 0.26)
+        self.canvas.create_text(width // 2 - 80, emoji_y, text="🐸", font=HOME_THEME["emoji_font"], tags="home")
+        self.canvas.create_text(width // 2, emoji_y, text="🐰", font=HOME_THEME["emoji_font"], tags="home")
+        self.canvas.create_text(width // 2 + 80, emoji_y, text="🐱", font=HOME_THEME["emoji_font"], tags="home")
+
+        # Play button and glow.
+        button_w = int(width * 0.42)
+        button_h = 60
+        button_x1 = width // 2 - button_w // 2
+        button_y1 = card_y1 + int((card_y2 - card_y1) * 0.62)
+        button_x2 = button_x1 + button_w
+        button_y2 = button_y1 + button_h
+
+        self.canvas.create_oval(button_x1 - 16, button_y1 - 16, button_x2 + 16, button_y2 + 16, fill=HOME_THEME["button_glow_outer"], outline="", tags="home")
+        self.canvas.create_oval(button_x1 - 6, button_y1 - 6, button_x2 + 6, button_y2 + 6, fill=HOME_THEME["button_glow_inner"], outline="", tags="home")
+        self._draw_home_rounded_rect(button_x1, button_y1, button_x2, button_y2, 18, fill=HOME_THEME["button_left"], outline="", width=0, tag="home")
+        self._draw_home_rounded_rect(button_x1 + int(button_w * 0.45), button_y1, button_x2, button_y2, 18, fill=HOME_THEME["button_right"], outline="", width=0, tag="home")
+        self.canvas.create_text(
+            width // 2, button_y1 + button_h // 2,
+            text="Tap to play  ▶",
+            font=HOME_THEME["button_font"],
+            fill=HOME_THEME["button_text"],
+            tags=("home", "play_button")
+        )
+
+        self.canvas.create_text(
+            width // 2, card_y2 - 28,
+            text=f"BEST ALTITUDE · {self.best_score} M",
+            font=HOME_THEME["footer_font"],
+            fill=HOME_THEME["footer"],
+            tags="home"
+        )
+
+    def draw_catcher_select_screen(self):
+        """Draw the catcher selection screen shown after tapping play."""
+        self.canvas.delete("select")
+        self.canvas.delete("home")
+        self.canvas.delete("gameover")
+
+        width, height = self._display_size()
+        panel_w = int(width * 0.36)
+        panel_h = int(height * 0.42)
+        panel_x1 = width // 2 - panel_w // 2
+        panel_y1 = height // 2 - panel_h // 2 - 20
+        panel_x2 = panel_x1 + panel_w
+        panel_y2 = panel_y1 + panel_h
+
+        self.canvas.create_rectangle(0, 0, width, height, fill=SELECT_THEME["page_bg"], outline="", tags="select")
+        self._draw_home_rounded_rect(panel_x1, panel_y1, panel_x2, panel_y2, 24, fill=SELECT_THEME["panel_fill"], outline=SELECT_THEME["panel_outline"], width=2, tag="select")
+
+        self.canvas.create_text(
+            width // 2, panel_y1 + 38,
+            text="Choose your catcher",
+            font=SELECT_THEME["title_font"],
+            fill=SELECT_THEME["title_fill"],
+            tags="select"
+        )
+
+        card_w = 134
+        card_h = 108
+        gap = 12
+        total_w = card_w * 3 + gap * 2
+        cards_x1 = width // 2 - total_w // 2
+        card_y1 = panel_y1 + 74
+        self.select_card_bounds = []
+
+        catchers = [
+            ("Mochi", "🐸"),
+            ("Pip", "🐰"),
+            ("Luna", "🐱"),
+        ]
+        for index, (name, emoji) in enumerate(catchers):
+            x1 = cards_x1 + index * (card_w + gap)
+            x2 = x1 + card_w
+            y1 = card_y1
+            y2 = y1 + card_h
+            self.select_card_bounds.append((x1, y1, x2, y2))
+
+            selected = index == self.selected_catcher
+            fill = SELECT_THEME["card_selected_fill"] if selected else SELECT_THEME["card_fill"]
+            outline = SELECT_THEME["card_selected_outline"] if selected else SELECT_THEME["card_outline"]
+            self._draw_home_rounded_rect(x1, y1, x2, y2, 18, fill=fill, outline=outline, width=2, tag="select")
+            self.canvas.create_text(x1 + card_w // 2, y1 + 34, text=emoji, font=SELECT_THEME["emoji_font"], fill="#ffffff", tags="select")
+            self.canvas.create_text(x1 + card_w // 2, y2 - 24, text=name, font=SELECT_THEME["card_name_font"], fill=SELECT_THEME["label_fill"], tags="select")
+
+        self.canvas.create_text(
+            width // 2, panel_y2 - 84,
+            text="Use ← → or drag to move.\nJump cloud to cloud. Avoid the falling stars.",
+            font=SELECT_THEME["instruction_font"],
+            fill=SELECT_THEME["instruction_fill"],
+            justify="center",
+            tags="select"
+        )
+
+        button_w = int(panel_w * 0.90)
+        button_h = 60
+        button_x1 = width // 2 - button_w // 2
+        button_y1 = panel_y2 - 50
+        button_x2 = button_x1 + button_w
+        button_y2 = button_y1 + button_h
+        self._draw_home_rounded_rect(button_x1, button_y1, button_x2, button_y2, 18, fill=SELECT_THEME["button_left"], outline="", width=0, tag="select")
+        self._draw_home_rounded_rect(button_x1 + int(button_w * 0.45), button_y1, button_x2, button_y2, 18, fill=SELECT_THEME["button_right"], outline="", width=0, tag="select")
+        self.canvas.create_text(
+            width // 2, button_y1 + button_h // 2,
+            text="Start climbing →",
+            font=SELECT_THEME["button_font"],
+            fill=SELECT_THEME["button_text"],
+            tags=("select", "start_button")
+        )
+
+        self.canvas.create_text(
+            width // 2, panel_y2 + 26,
+            text=f"Best altitude: {self.best_score} m",
+            font=SELECT_THEME["footer_font"],
+            fill=SELECT_THEME["footer_fill"],
+            tags="select"
+        )
+
+    def _draw_home_cloud(self, x, y, scale):
+        """Draw a soft cloud cluster on the home screen."""
+        radius_x = int(30 * scale)
+        radius_y = int(18 * scale)
+        color = HOME_THEME["cloud"]
+        self.canvas.create_oval(x, y, x + radius_x * 2, y + radius_y * 2, fill=color, outline="", tags="home")
+        self.canvas.create_oval(x + int(25 * scale), y - int(12 * scale), x + int(25 * scale) + radius_x * 2, y - int(12 * scale) + radius_y * 2, fill=color, outline="", tags="home")
+        self.canvas.create_oval(x + int(50 * scale), y + int(6 * scale), x + int(50 * scale) + radius_x * 2, y + int(6 * scale) + radius_y * 2, fill=color, outline="", tags="home")
+
+    def _draw_home_rounded_rect(self, x1, y1, x2, y2, radius, fill, outline="", width=1, tag="home"):
+        """Draw a rounded rectangle using simple ovals and rectangles."""
+        self.canvas.create_rectangle(x1 + radius, y1, x2 - radius, y2, fill=fill, outline=outline, width=width, tags=tag)
+        self.canvas.create_rectangle(x1, y1 + radius, x2, y2 - radius, fill=fill, outline=outline, width=width, tags=tag)
+        self.canvas.create_oval(x1, y1, x1 + radius * 2, y1 + radius * 2, fill=fill, outline=outline, width=width, tags=tag)
+        self.canvas.create_oval(x2 - radius * 2, y1, x2, y1 + radius * 2, fill=fill, outline=outline, width=width, tags=tag)
+        self.canvas.create_oval(x1, y2 - radius * 2, x1 + radius * 2, y2, fill=fill, outline=outline, width=width, tags=tag)
+        self.canvas.create_oval(x2 - radius * 2, y2 - radius * 2, x2, y2, fill=fill, outline=outline, width=width, tags=tag)
+
+    def _draw_home_gradient_card(self, x1, y1, x2, y2):
+        """Draw a simple vertical gradient for the intro card."""
+        gradient_colors = HOME_THEME["card_fill_top"]
+        height = y2 - y1
+        stripe_height = max(1, height // len(gradient_colors))
+        current_y = y1
+        for color in gradient_colors:
+            next_y = min(y2, current_y + stripe_height)
+            self.canvas.create_rectangle(x1, current_y, x2, next_y, fill=color, outline="", tags="home")
+            current_y = next_y
+        if current_y < y2:
+            self.canvas.create_rectangle(x1, current_y, x2, y2, fill=gradient_colors[-1], outline="", tags="home")
+
+    def _display_size(self):
+        """Return the current drawing size for the active window mode."""
+        if self.is_fullscreen:
+            return self.screen_width, self.screen_height
+        return self.window_width, self.window_height
+
+    def _on_root_configure(self, event):
+        """Keep the canvas synced to the actual visible window size."""
+        if event.widget is not self.root:
+            return
+
+        width = max(1, event.width)
+        height = max(1, event.height)
+
+        if self.is_fullscreen:
+            self.screen_width = width
+            self.screen_height = height
+        else:
+            self.window_width = width
+            self.window_height = height
+
+        self.canvas.place(x=0, y=0, width=width, height=height)
+        self.canvas.configure(width=width, height=height)
+
+        if self.on_home_screen:
+            self.draw_home_screen()
+        elif self.on_select_screen:
+            self.draw_catcher_select_screen()
+        else:
+            # Rebuild world to adapt to new window size so the main grid scales
+            self._rebuild_world()
+            self.draw_scene()
+
+    def _on_canvas_click(self, event):
+        """Start the game when the home screen is clicked."""
+        if self.on_home_screen and not self.game_over:
+            self.begin_game()
+            return
+
+        if self.on_select_screen and not self.game_over:
+            self._handle_select_screen_click(event.x, event.y)
+
+    def _handle_select_screen_click(self, x, y):
+        """Handle clicks on the catcher selection screen."""
+        for index, (x1, y1, x2, y2) in enumerate(self.select_card_bounds):
+            if x1 <= x <= x2 and y1 <= y <= y2:
+                self.selected_catcher = index
+                self.draw_catcher_select_screen()
+                return
+
+        width, height = self._display_size()
+        panel_w = int(width * 0.36)
+        panel_h = int(height * 0.42)
+        panel_y1 = height // 2 - panel_h // 2 - 20
+        panel_y2 = panel_y1 + panel_h
+        button_w = int(panel_w * 0.90)
+        button_h = 60
+        button_x1 = width // 2 - button_w // 2
+        button_y1 = panel_y2 - 50
+        button_x2 = button_x1 + button_w
+        button_y2 = button_y1 + button_h
+
+        if button_x1 <= x <= button_x2 and button_y1 <= y <= button_y2:
+            self.begin_game()
     
     def bind_controls(self):
         """Bind keyboard controls to frog actions."""
-        self.root.bind("<Left>", self.frog.move_left)
-        self.root.bind("<Right>", self.frog.move_right)
-        self.root.bind("<space>", self.frog.jump)
-        self.root.bind("<KeyRelease-Left>", self.frog.stop)
-        self.root.bind("<KeyRelease-Right>", self.frog.stop)
-        self.root.bind("<r>", self.restart)
-        self.root.bind("<R>", self.restart)
+        # Use wrapper handlers so bindings always call the current frog instance
+        self.root.bind_all("<Left>", self._on_left)
+        self.root.bind_all("<Right>", self._on_right)
+        self.root.bind_all("<KeyRelease-Left>", self._on_left_release)
+        self.root.bind_all("<KeyRelease-Right>", self._on_right_release)
+        self.root.bind_all("<r>", self._on_restart)
+        self.root.bind_all("<R>", self._on_restart)
+        self.root.bind_all("<F11>", self._on_toggle_fullscreen)
+        self.root.bind_all("<Escape>", self._on_exit_fullscreen)
+
+    # Wrapper input handlers that forward to the current frog instance
+    def _on_left(self, event=None):
+        if hasattr(self, 'frog') and self.frog:
+            self.frog.move_left(event)
+
+    def _on_right(self, event=None):
+        if hasattr(self, 'frog') and self.frog:
+            self.frog.move_right(event)
+
+    def _on_left_release(self, event=None):
+        if hasattr(self, 'frog') and self.frog:
+            self.frog.stop(event)
+
+    def _on_right_release(self, event=None):
+        if hasattr(self, 'frog') and self.frog:
+            self.frog.stop(event)
+
+    def _on_restart(self, event=None):
+        self.restart(event)
+
+    def _on_toggle_fullscreen(self, event=None):
+        self.toggle_fullscreen()
+
+    def _on_exit_fullscreen(self, event=None):
+        if self.is_fullscreen:
+            self.toggle_fullscreen(False)
+
+    def toggle_fullscreen(self, enabled=None):
+        """Toggle fullscreen mode on or off."""
+        if enabled is None:
+            enabled = not self.is_fullscreen
+        self.is_fullscreen = bool(enabled)
+        try:
+            self.root.attributes("-fullscreen", self.is_fullscreen)
+        except tk.TclError:
+            if self.is_fullscreen:
+                self.root.state("zoomed")
+
+        # Force geometry update and query actual sizes so canvas truly fills the screen.
+        self.root.update_idletasks()
+        if self.is_fullscreen:
+            # Use current monitor/screen dimensions
+            width = self.root.winfo_screenwidth()
+            height = self.root.winfo_screenheight()
+            self.screen_width = width
+            self.screen_height = height
+            self.canvas.configure(width=width, height=height)
+            self.canvas.place(x=0, y=0, width=width, height=height)
+            # Rebuild world to match new canvas size
+            self._rebuild_world()
+        else:
+            # Use actual window size (restore) and update stored window size
+            width = max(960, self.root.winfo_width())
+            height = max(600, self.root.winfo_height())
+            self.window_width = width
+            self.window_height = height
+            try:
+                self.root.geometry(f"{width}x{height}")
+            except Exception:
+                pass
+            self.canvas.configure(width=width, height=height)
+            self.canvas.place(x=0, y=0, width=width, height=height)
+            # Rebuild world to match restored window size
+            self._rebuild_world()
+
+        # Redraw whichever screen is currently visible so it matches the new size.
+        if self.on_home_screen:
+            self.draw_home_screen()
+        else:
+            self.draw_scene()
+
+    def begin_game(self):
+        """Transition from the home screen into live gameplay."""
+        if self.on_home_screen:
+            self.on_home_screen = False
+            self.on_select_screen = True
+            self.draw_catcher_select_screen()
+            return
+
+        self.on_select_screen = False
+        self.canvas.delete("home")
+        self.canvas.delete("select")
+        self.canvas.delete("gameover")
+        if self.is_fullscreen:
+            width, height = self.screen_width, self.screen_height
+        else:
+            # Maximize the window when entering gameplay for a larger view
+            try:
+                self.root.state("zoomed")
+                self.root.update_idletasks()
+                width = self.root.winfo_width()
+                height = self.root.winfo_height()
+                self.window_width = width
+                self.window_height = height
+            except Exception:
+                width, height = GameConfig.WIDTH, GameConfig.HEIGHT
+        self.canvas.configure(width=width, height=height)
+        self.canvas.place(x=0, y=0, width=width, height=height)
+        # Enter fullscreen for gameplay and draw scene (will rebuild world inside toggle)
+        try:
+            self.toggle_fullscreen(True)
+        except Exception:
+            pass
+        self.draw_scene()
+        self.start_game()
+
+    def _rebuild_world(self):
+        """Create a fresh cloud world and matching platform objects sized to the canvas."""
+        # Clear previous platform and frog visuals
+        try:
+            self.canvas.delete("platform")
+            self.canvas.delete("frog")
+        except Exception:
+            pass
+
+        # Determine current display size and compute ground Y so ground remains a fixed distance from bottom
+        width, height = self._display_size()
+        bottom_gap = GameConfig.HEIGHT - GameConfig.GROUND_Y  # default distance from bottom to ground
+        ground_y = max(80, height - bottom_gap)
+
+        # Recreate cloud graph sized to current canvas
+        self.cloud_graph = CloudGraph(
+            width,
+            ground_y,
+            rows=GameConfig.NUM_CLOUD_ROWS,
+            columns=GameConfig.NUM_CLOUD_COLUMNS,
+            row_gap=GameConfig.CLOUD_ROW_GAP,
+            jump_range=GameConfig.CLOUD_JUMP_RANGE,
+        )
+        self.sequence_generator = IDSSequenceGenerator(self.cloud_graph)
+
+        # Create frog tied to new cloud graph
+        self.frog = Frog(self.canvas, self.cloud_graph)
+
+        # Create platform visuals for all nodes
+        self.cloud_platforms = []
+        for i, cloud_pos in enumerate(self.cloud_graph.nodes):
+            platform = CloudPlatform(self.canvas, cloud_pos[0], cloud_pos[1], i, self.cloud_graph.get_row(i))
+            self.cloud_platforms.append(platform)
     
     def start_game(self):
         """Initialize a new game session."""
@@ -683,6 +1045,7 @@ class CloudCatcherGame:
         self.obstacles_dodged = 0
         self.game_over = False
         self.frog.reset()
+        self.last_hazard_spawn = 0.0
         
         # Clear any leftover obstacles
         for obstacle in self.obstacles:
@@ -721,14 +1084,54 @@ class CloudCatcherGame:
         # Update cloud platforms
         for cloud in self.cloud_platforms:
             cloud.update(dt)
-        
+
+        # Camera: if the frog rises above a threshold, move the world down
+        camera_threshold = 180
+        if self.frog.y < camera_threshold:
+            dy = camera_threshold - self.frog.y
+
+            # Keep sky/gradient fixed to the viewport (no full-background moves)
+            # If you want parallax, move background by a fraction of dy here.
+
+            # Move all cloud platforms and update their stored positions
+            # Move ground with the world so it disappears as frog climbs
+            try:
+                self.canvas.move("ground", 0, dy)
+            except Exception:
+                pass
+            for cloud in self.cloud_platforms:
+                cloud.y += dy
+                self.canvas.move(cloud.id, 0, dy)
+                self.canvas.move(cloud.label, 0, dy)
+
+            # Move obstacles (falling stars) and update their stored positions
+            for obstacle in self.obstacles:
+                obstacle.y += dy
+                self.canvas.move(obstacle.id, 0, dy)
+
+            # Shift AI graph node positions so future spawns align with visuals
+            for idx, (nx, ny) in enumerate(self.cloud_graph.nodes):
+                self.cloud_graph.nodes[idx] = (nx, ny + dy)
+
+            # Keep frog at camera threshold
+            self.frog.y = camera_threshold
+
+        # Keep the world continuous by extending clouds upward as needed.
+        self._ensure_cloud_continuity()
+
         # Spawn obstacles from IDS-generated sequence
         self._spawn_obstacles_from_sequence()
+
+        # Continuous spawner: ensure a stream of falling stars
+        self._continuous_hazard_spawner(dt)
+
+        # Stars get faster as the frog climbs higher.
+        speed_boost = self.frog.current_cloud_row * 0.18
         
         # Update all obstacles and check collisions
         remaining_obstacles = []
         for obstacle in self.obstacles:
-            obstacle.update()
+            obstacle.update(speed_boost)
             
             # Check if frog hit this deadly star
             if obstacle.collides_with(self.frog):
@@ -747,64 +1150,125 @@ class CloudCatcherGame:
                     self.show_message(f"Achievement: {', '.join(unlocked)}")
                 continue
             
-            remaining_obstacles.append(obstacle)
-        
-        self.obstacles = remaining_obstacles
-        
-        # Update best score
+
+                # Do NOT move the full background tag; keep sky/gradient fixed to the viewport
+                # (moving the background causes uncovered areas at the top when scrolling).
+                # If a parallax effect is desired, move background by a fraction of dy.
+                self.canvas.move("background", 0, dy)
         self.best_score = max(self.best_score, self.obstacles_dodged)
-        
+
         # Draw UI
         self.update_ui()
-        
-        # Check win condition - survive enough obstacles
-        if self.obstacles_dodged >= 10:
-            self.end_game("You survived! You win!")
-            return
         
         # Schedule next frame
         self.root.after(16, self.loop)
     
     def _spawn_obstacles_from_sequence(self):
         """
-        Spawn obstacles from the IDS-generated sequence based on timing.
-        Obstacles are spawned when sequence_time reaches their spawn time.
+        Spawn hazards from the IDS-generated sequence based on timing.
+        IDS builds the route, DLS finds the bounded ascent, and BFS validated it.
         """
         if not self.sequence:
             return
         
-        for i, (cloud_id, spawn_time) in enumerate(self.sequence):
+        for i, (cloud_id, spawn_time, speed) in enumerate(self.sequence["hazards"]):
             # Check if it's time to spawn this obstacle
             if spawn_time <= self.sequence_time:
                 # Check if obstacle already spawned
                 if i not in self._spawned_obstacles:
                     # Spawn obstacle at cloud position
                     cloud_x, _ = self.cloud_graph.get_node_position(cloud_id)
-                    obstacle = FallingObstacle(self.canvas, cloud_x, speed=3.5)
+                    obstacle = FallingObstacle(self.canvas, cloud_x, speed=speed)
                     self.obstacles.append(obstacle)
                     self._spawned_obstacles.add(i)
+
+    def _continuous_hazard_spawner(self, dt):
+        """Spawn additional hazards continuously, rate increases with frog height."""
+        # Increase spawn rate with height (higher row -> faster spawns)
+        frog_row = getattr(self.frog, 'current_cloud_row', 0)
+        # interval shrinks as frog climbs, but keep a minimum interval
+        interval = max(0.35, self.hazard_spawn_interval - frog_row * 0.12)
+        self.last_hazard_spawn += dt
+
+        # If there are fewer than a few hazards, spawn more; also time-based spawn
+        want_min_active = 2
+        if len(self.obstacles) < want_min_active or self.last_hazard_spawn >= interval:
+            # choose a cloud to drop from: prefer clouds ahead of the frog (same or above row)
+            # Choose clouds at or above the frog's current row (spawn from above)
+            candidates = [i for i in range(len(self.cloud_graph.nodes)) if self.cloud_graph.get_row(i) >= getattr(self.frog, 'current_cloud_row', 0)]
+            if candidates:
+                # pick random candidate but bias toward columns above frog
+                choice = random.choice(candidates)
+                cx, cy = self.cloud_graph.get_node_position(choice)
+                # speed scales with row
+                speed = 3.0 + self.cloud_graph.get_row(choice) * 0.45 + frog_row * 0.08
+                obstacle = FallingObstacle(self.canvas, cx, speed=speed)
+                self.obstacles.append(obstacle)
+            self.last_hazard_spawn = 0.0
+
+    def _ensure_cloud_continuity(self):
+        """Add new cloud rows above the visible stack so the climb never runs out."""
+        if not self.cloud_platforms:
+            return
+
+        top_threshold = 120
+        current_top = min(cloud.y for cloud in self.cloud_platforms)
+
+        while current_top > top_threshold:
+            before_count = len(self.cloud_graph.nodes)
+            self.cloud_graph.add_rows_above(1)
+
+            # Create platform visuals for only the newly added nodes.
+            for node_id in range(before_count, len(self.cloud_graph.nodes)):
+                cloud_x, cloud_y = self.cloud_graph.get_node_position(node_id)
+                platform = CloudPlatform(
+                    self.canvas,
+                    cloud_x,
+                    cloud_y,
+                    node_id,
+                    self.cloud_graph.get_row(node_id)
+                )
+                self.cloud_platforms.append(platform)
+
+            current_top = min(cloud.y for cloud in self.cloud_platforms)
     
     def update_ui(self):
         """Draw HUD showing score, best score, and controls."""
         self.canvas.delete("ui")
-        
-        # Current score - obstacles dodged
-        self.canvas.create_text(
-            10, 40, anchor="nw", text=f"Dodged: {self.obstacles_dodged}",
-            font=("Arial", 14, "bold"), fill="white", tags="ui"
+
+        width, height = self._display_size()
+
+        # Altitude HUD (small rounded box with triangle icon)
+        box_x1 = 12
+        box_y1 = 12
+        box_w = 110
+        box_h = 36
+        self._draw_home_rounded_rect(box_x1, box_y1, box_x1 + box_w, box_y1 + box_h, 8, fill="#6d7780", outline="", width=0, tag="ui")
+
+        # Triangle indicator (simple white chevron/up-triangle)
+        tri_cx = box_x1 + 20
+        tri_cy = box_y1 + box_h // 2
+        self.canvas.create_polygon(
+            tri_cx, tri_cy - 8,
+            tri_cx - 10, tri_cy + 6,
+            tri_cx + 10, tri_cy + 6,
+            fill="#ffffff", outline="", tags="ui"
         )
-        
-        # Best score
+
+        # Altitude text: compute from frog row (approximate meters)
+        altitude = 0
+        if hasattr(self, 'frog') and getattr(self.frog, 'current_cloud_row', None) is not None:
+            altitude = max(0, int(self.frog.current_cloud_row * 10))
         self.canvas.create_text(
-            10, 65, anchor="nw", text=f"Best: {self.best_score}",
-            font=("Arial", 14, "bold"), fill="white", tags="ui"
+            box_x1 + 40, box_y1 + box_h // 2,
+            text=f"{altitude}m",
+            font=("Arial", 12, "bold"), fill="#ffffff", anchor="w", tags="ui"
         )
-        
-        # Controls hint
+
+        # Small score indicator at top-right
         self.canvas.create_text(
-            GameConfig.WIDTH - 10, 12, anchor="ne",
-            text="Move: <- -> | Jump: Space | Restart: R",
-            font=("Arial", 10), fill="white", tags="ui"
+            width - 12, 12 + 6,
+            text=f"★ {self.obstacles_dodged}", font=("Arial", 12, "bold"), fill="#ffffff", anchor="ne", tags="ui"
         )
     
     def show_message(self, text):
@@ -849,18 +1313,11 @@ class CloudCatcherGame:
         """Restart game after sequence ends."""
         self.canvas.delete("all")
         self.draw_scene()
-        
-        # Reset frog
-        self.frog = Frog(self.canvas, self.cloud_graph)
+        self._rebuild_world()
         self.obstacles = []
         self._spawned_obstacles = set()
-        
-        # Recreate cloud platforms
-        self.cloud_platforms = []
-        for i, cloud_pos in enumerate(self.cloud_graph.nodes):
-            platform = CloudPlatform(self.canvas, cloud_pos[0], cloud_pos[1], i)
-            self.cloud_platforms.append(platform)
-        
+        self.on_home_screen = False
+
         # Start new game
         self.start_game()
     
