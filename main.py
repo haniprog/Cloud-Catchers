@@ -1,7 +1,9 @@
 """
-Cloud Catchers Game - AI-Driven Platformer
-Uses Iterative Deepening Search (IDS) to generate item sequences
-Uses Breadth-First Search (BFS) to validate sequence solvability
+Cloud Catchers Game - Frog Platformer
+Player is a frog jumping on disappearing cloud platforms
+Avoid falling deadly stars to survive
+Uses IDS to generate star obstacle patterns
+Uses BFS to ensure platform path is survivable
 """
 import json
 import os
@@ -13,22 +15,15 @@ from collections import deque
 # ============================================================================
 # GAME CONFIGURATION - All adjustable game parameters
 # ============================================================================
-# ============================================================================
-# GAME CONFIGURATION - All adjustable game parameters
-# ============================================================================
 class GameConfig:
     # Canvas dimensions
     WIDTH = 800
     HEIGHT = 600
     GROUND_Y = 520
     
-    # Player sprite dimensions and properties
-    PLAYER_W = 40
-    PLAYER_H = 50
-    
-    # Item (star/raindrop) sprite dimensions
-    ITEM_W = 20
-    ITEM_H = 20
+    # Frog sprite dimensions
+    PLAYER_W = 30
+    PLAYER_H = 20
     
     # Persistence files for save data and analytics
     SAVE_FILE = "savegame.json"
@@ -39,13 +34,13 @@ class GameConfig:
     CLOUD_SPACING = 120  # Pixels between clouds horizontally
     CLOUD_START_X = 100
     
-    # IDS parameters for sequence generation
-    IDS_MAX_DEPTH = 8  # Maximum items in a sequence
+    # IDS parameters for obstacle sequence generation
+    IDS_MAX_DEPTH = 8  # Maximum obstacles in a sequence
     
     # Game difficulty settings
-    ITEM_GROUPS_MIN = 2  # Minimum items per sequence
-    ITEM_GROUPS_MAX = 5  # Maximum items per sequence
-    MAX_FALL_TIME = 8.0  # Maximum seconds before item falls off screen
+    OBSTACLE_GROUPS_MIN = 2  # Minimum obstacles per sequence
+    OBSTACLE_GROUPS_MAX = 5  # Maximum obstacles per sequence
+    MAX_FALL_TIME = 10.0  # Maximum seconds before obstacle falls off screen
 
 
 # ============================================================================
@@ -53,8 +48,8 @@ class GameConfig:
 # ============================================================================
 class CloudGraph:
     """
-    Represents clouds as nodes in a graph where edges represent valid player jumps.
-    This is the state-space environment used by BFS for solvability validation.
+    Represents clouds as nodes in a graph where edges represent valid jumps.
+    This is the state-space environment used by BFS for survivability validation.
     """
     def __init__(self):
         # nodes[i] = (x_pos, y_pos) of cloud i
@@ -69,7 +64,7 @@ class CloudGraph:
     def _generate_clouds(self):
         """
         Create evenly-spaced clouds from left to right across the screen.
-        Each cloud is a potential landing platform for the player.
+        Each cloud is a potential landing platform for the frog.
         """
         for i in range(GameConfig.NUM_CLOUDS):
             x = GameConfig.CLOUD_START_X + i * GameConfig.CLOUD_SPACING
@@ -79,7 +74,7 @@ class CloudGraph:
     def _build_edges(self):
         """
         Connect clouds based on jump distance.
-        Player can jump to adjacent clouds within jumping range.
+        Frog can jump to adjacent clouds within jumping range.
         """
         self.edges = [[] for _ in range(len(self.nodes))]
         
@@ -91,7 +86,7 @@ class CloudGraph:
                     x2, y2 = self.nodes[j]
                     # Distance between clouds
                     distance = abs(x2 - x1)
-                    # Player can jump up to 150 pixels horizontally
+                    # Frog can jump up to 150 pixels horizontally
                     if distance <= 150:
                         self.edges[i].append(j)
     
@@ -105,42 +100,34 @@ class CloudGraph:
 
 
 # ============================================================================
-# BREADTH-FIRST SEARCH (BFS) - Validates sequence solvability
+# BREADTH-FIRST SEARCH (BFS) - Validates obstacle sequence survivability
 # ============================================================================
 class BFSSolver:
     """
-    Uses BFS to check if a player can collect all items in a sequence.
-    If BFS finds a valid path, the sequence is solvable and accepted.
+    Uses BFS to check if a frog can survive a sequence of falling obstacles.
+    Ensures there's always a safe path of clouds to land on.
     """
     
-    def is_sequence_solvable(self, cloud_graph, item_positions, start_cloud):
+    def is_sequence_survivable(self, cloud_graph, obstacle_sequence, start_cloud):
         """
-        Check if player starting at start_cloud can reach all item positions.
+        Check if frog can navigate all obstacles from start_cloud.
         
         Args:
             cloud_graph: CloudGraph object representing cloud network
-            item_positions: List of (cloud_id, time) tuples for each item
+            obstacle_sequence: List of (cloud_id, time) tuples for obstacles
             start_cloud: Starting cloud index
         
         Returns:
-            True if all items are reachable, False otherwise
+            True if sequence is survivable, False otherwise
         """
-        # Extract unique cloud IDs where items appear
-        target_clouds = set(cloud_id for cloud_id, _ in item_positions)
-        
-        # BFS to find if we can reach all target clouds
+        # BFS to verify frog can reach safe clouds
         visited = set()
         queue = deque([start_cloud])
         visited.add(start_cloud)
-        reached_targets = set()
         
-        # Standard BFS traversal
+        # Standard BFS traversal - ensure reachable clouds exist
         while queue:
             current_cloud = queue.popleft()
-            
-            # Mark any target item on this cloud as reachable
-            if current_cloud in target_clouds:
-                reached_targets.add(current_cloud)
             
             # Expand to neighboring clouds
             for neighbor in cloud_graph.get_reachable_nodes(current_cloud):
@@ -148,35 +135,34 @@ class BFSSolver:
                     visited.add(neighbor)
                     queue.append(neighbor)
         
-        # Sequence is solvable if we can reach all item clouds
-        return len(reached_targets) == len(target_clouds)
+        # Sequence is survivable if we have at least 2 reachable clouds
+        return len(visited) >= 2
 
 
 # ============================================================================
-# ITERATIVE DEEPENING SEARCH (IDS) - Generates item sequences
+# ITERATIVE DEEPENING SEARCH (IDS) - Generates obstacle sequences
 # ============================================================================
 class IDSSequenceGenerator:
     """
-    Uses IDS to systematically generate item sequences that are both
-    challenging and solvable. Starts with simple sequences (few items)
-    and incrementally increases complexity by depth.
+    Uses IDS to systematically generate falling star obstacle sequences that are
+    challenging but survivable. Starts simple and increases complexity.
     """
     
     def __init__(self, cloud_graph):
         self.cloud_graph = cloud_graph
         self.bfs_solver = BFSSolver()
-        self.player_start_cloud = 0  # Player always starts at first cloud
+        self.frog_start_cloud = 0  # Frog always starts at first cloud
     
     def generate_sequence(self, target_depth, max_attempts=20):
         """
-        Generate a valid item sequence using IDS up to target_depth.
+        Generate a valid obstacle sequence using IDS up to target_depth.
         
         Args:
-            target_depth: Number of items in sequence to generate
+            target_depth: Number of obstacles in sequence to generate
             max_attempts: Maximum attempts before giving up
         
         Returns:
-            List of (cloud_id, time) tuples representing item positions, or None
+            List of (cloud_id, time) tuples representing obstacle positions
         """
         # Perform depth-limited search starting from depth 1
         for depth in range(1, target_depth + 1):
@@ -185,39 +171,39 @@ class IDSSequenceGenerator:
                 sequence = self._generate_random_sequence(depth)
                 
                 # Validate using BFS
-                if self.bfs_solver.is_sequence_solvable(
-                    self.cloud_graph, sequence, self.player_start_cloud
+                if self.bfs_solver.is_sequence_survivable(
+                    self.cloud_graph, sequence, self.frog_start_cloud
                 ):
                     return sequence
         
-        # Fallback: return a simple guaranteed-solvable sequence
+        # Fallback: return a simple guaranteed-survivable sequence
         return self._generate_simple_fallback_sequence()
     
     def _generate_random_sequence(self, depth):
         """
-        Create a random sequence of 'depth' items across clouds.
-        Each item is assigned a random cloud and spawn time.
+        Create a random sequence of 'depth' obstacles across clouds.
+        Each obstacle is assigned a random cloud and spawn time.
         """
         sequence = []
         current_time = 1.0
         
         for _ in range(depth):
-            # Random cloud and time for this item
+            # Random cloud and time for this obstacle
             cloud_id = random.randint(0, len(self.cloud_graph.nodes) - 1)
             sequence.append((cloud_id, current_time))
-            # Space items apart in time to give player time to move
+            # Space obstacles apart in time to give frog time to dodge
             current_time += random.uniform(2.0, 4.0)
         
         return sequence
     
     def _generate_simple_fallback_sequence(self):
         """
-        Generate a guaranteed-solvable sequence for reliability.
+        Generate a guaranteed-survivable sequence for reliability.
         """
         return [
-            (0, 1.0),
-            (1, 3.5),
-            (2, 6.0),
+            (1, 1.0),
+            (3, 3.5),
+            (5, 6.0),
         ]
 
 
@@ -255,8 +241,8 @@ class AnalyticsService:
         # Initialize tracking data
         self.data = {
             "games_played": 0,
-            "items_collected": 0,
-            "sequences_completed": 0,
+            "obstacles_dodged": 0,
+            "sequences_survived": 0,
             "last_score": 0
         }
         self.load()
@@ -281,14 +267,14 @@ class AnalyticsService:
         self.data["games_played"] += 1
         self.save()
     
-    def collected_item(self):
-        """Record when player collects an item."""
-        self.data["items_collected"] += 1
+    def dodged_obstacle(self):
+        """Record when frog dodges an obstacle."""
+        self.data["obstacles_dodged"] += 1
         self.save()
     
-    def completed_sequence(self):
-        """Record when player completes a sequence."""
-        self.data["sequences_completed"] += 1
+    def survived_sequence(self):
+        """Record when frog survives a sequence."""
+        self.data["sequences_survived"] += 1
         self.save()
 
 
@@ -296,13 +282,13 @@ class AnalyticsService:
 # ACHIEVEMENT SYSTEM - Unlocks milestones
 # ============================================================================
 class AchievementService:
-    """Awards achievements when player reaches score milestones."""
+    """Awards achievements when frog reaches score milestones."""
     
     def __init__(self):
         # Set of unlocked achievement names
         self.unlocked = set()
     
-    def check(self, items_collected):
+    def check(self, obstacles_dodged):
         """
         Check for newly unlocked achievements at current score.
         
@@ -311,16 +297,16 @@ class AchievementService:
         """
         # Define achievement thresholds
         achievements = {
-            1: "First Catch",
-            5: "Cloud Rider",
-            10: "Sky Guardian",
-            20: "Master Collector",
+            1: "First Dodge",
+            3: "Cloud Hopper",
+            7: "Sky Dancer",
+            15: "Frog Master",
         }
         
         newly_unlocked = []
         for threshold, name in achievements.items():
             # Check if score reached threshold and not already unlocked
-            if items_collected >= threshold and name not in self.unlocked:
+            if obstacles_dodged >= threshold and name not in self.unlocked:
                 self.unlocked.add(name)
                 newly_unlocked.append(name)
         
@@ -328,12 +314,13 @@ class AchievementService:
 
 
 # ============================================================================
-# PLAYER - Represents the player character with physics
+# FROG - Player character that jumps on clouds and avoids stars
 # ============================================================================
-class Player:
+class Frog:
     """
-    Player object with physics simulation for movement and jumping.
-    Player can move left/right and jump between clouds.
+    Frog player with physics simulation.
+    Jumps on disappearing cloud platforms and avoids falling stars.
+    Dies if: hits a star, falls off bottom, or runs out of platforms.
     """
     
     def __init__(self, canvas, cloud_graph):
@@ -346,24 +333,43 @@ class Player:
         self.vx = 0  # Horizontal velocity
         self.vy = 0  # Vertical velocity
         self.on_ground = True
+        self.current_cloud = 0  # Which cloud frog is on
         
-        # Draw player as a blue rectangle
-        self.id = canvas.create_rectangle(0, 0, 0, 0, fill="#4a90e2", outline="")
+        # Draw frog as a green sprite with eyes
+        # Body: green rectangle
+        self.body_id = canvas.create_rectangle(
+            0, 0, 0, 0, fill="#2ecc71", outline="#27ae60", width=2, tags="frog"
+        )
+        # Eyes: two white circles
+        self.eye_left_id = canvas.create_oval(
+            0, 0, 0, 0, fill="white", outline="black", width=1, tags="frog"
+        )
+        self.eye_right_id = canvas.create_oval(
+            0, 0, 0, 0, fill="white", outline="black", width=1, tags="frog"
+        )
+        # Pupils: two black dots
+        self.pupil_left_id = canvas.create_oval(
+            0, 0, 0, 0, fill="black", tags="frog"
+        )
+        self.pupil_right_id = canvas.create_oval(
+            0, 0, 0, 0, fill="black", tags="frog"
+        )
     
     def reset(self):
-        """Reset player to starting position and state."""
+        """Reset frog to starting position and state."""
         self.x = self.cloud_graph.nodes[0][0]
         self.y = self.cloud_graph.nodes[0][1]
         self.vx = 0
         self.vy = 0
         self.on_ground = True
+        self.current_cloud = 0
     
     def move_left(self, event=None):
-        """Handle left arrow key press."""
+        """Handle left arrow key press - hop left."""
         self.vx = -6
     
     def move_right(self, event=None):
-        """Handle right arrow key press."""
+        """Handle right arrow key press - hop right."""
         self.vx = 6
     
     def stop(self, event=None):
@@ -371,15 +377,18 @@ class Player:
         self.vx = 0
     
     def jump(self, event=None):
-        """Handle space bar - player jumps if on ground."""
+        """Handle space bar - frog jumps if on ground."""
         if self.on_ground:
             self.vy = -14  # Jump velocity (upward)
             self.on_ground = False
     
-    def update(self):
+    def update(self, cloud_platforms):
         """
-        Update player position using physics simulation.
-        Applies gravity, updates position, and checks ground collision.
+        Update frog position using physics simulation.
+        Applies gravity, updates position, checks cloud collisions.
+        
+        Returns:
+            True if frog alive, False if frog died
         """
         # Apply horizontal movement
         self.x += self.vx
@@ -394,87 +403,195 @@ class Player:
         # Update vertical position
         self.y += self.vy
         
-        # Check collision with ground
-        if self.y >= GameConfig.GROUND_Y:
-            self.y = GameConfig.GROUND_Y
-            self.vy = 0
-            self.on_ground = True
+        # Check collision with clouds (platforms)
+        landing_on_cloud = False
+        for i, cloud in enumerate(cloud_platforms):
+            # Only collide with solid clouds
+            if not cloud.is_solid():
+                continue
+            
+            # Check if frog is landing on this cloud
+            cloud_x, cloud_y = cloud.x, cloud.y
+            if (abs(self.x - cloud_x) < 50 and 
+                self.vy > 0 and 
+                abs(self.y - cloud_y) < 40):
+                
+                # Land on cloud
+                self.y = cloud_y - 40
+                self.vy = 0
+                self.on_ground = True
+                self.current_cloud = i
+                cloud.touch()  # Cloud starts disappearing timer
+                landing_on_cloud = True
         
-        # Draw player at new position
-        x1 = self.x - GameConfig.PLAYER_W // 2
-        y1 = self.y - GameConfig.PLAYER_H
-        x2 = self.x + GameConfig.PLAYER_W // 2
-        y2 = self.y
-        self.canvas.coords(self.id, x1, y1, x2, y2)
+        # Check collision with ground at bottom (death - fell off)
+        if self.y >= GameConfig.HEIGHT:
+            return False  # Frog died - fell off screen
+        
+        # Draw frog at new position
+        self._draw_frog()
+        return True  # Frog still alive
+    
+    def _draw_frog(self):
+        """Draw frog sprite at current position."""
+        # Body - main rectangle
+        self.canvas.coords(
+            self.body_id,
+            self.x - 15, self.y - 12,
+            self.x + 15, self.y + 8
+        )
+        # Left eye
+        self.canvas.coords(
+            self.eye_left_id,
+            self.x - 10, self.y - 10,
+            self.x - 5, self.y - 5
+        )
+        # Right eye
+        self.canvas.coords(
+            self.eye_right_id,
+            self.x + 5, self.y - 10,
+            self.x + 10, self.y - 5
+        )
+        # Left pupil
+        self.canvas.coords(
+            self.pupil_left_id,
+            self.x - 9, self.y - 8,
+            self.x - 7, self.y - 6
+        )
+        # Right pupil
+        self.canvas.coords(
+            self.pupil_right_id,
+            self.x + 7, self.y - 8,
+            self.x + 9, self.y - 6
+        )
 
 
 # ============================================================================
-# ITEM - Represents collectible items (stars) falling from sky
+# CLOUD PLATFORM - Disappearing platforms frog jumps on
 # ============================================================================
-class Item:
+class CloudPlatform:
     """
-    Falling item object. Spawns at top and falls vertically downward.
-    Player must reach it before it passes the bottom of screen.
+    Cloud platforms that frog jumps on.
+    When frog lands on a cloud, it starts a disappear timer.
+    After timeout, the cloud fades and becomes non-solid.
+    """
+    
+    def __init__(self, canvas, x, y, cloud_id):
+        self.canvas = canvas
+        self.x = x
+        self.y = y
+        self.cloud_id = cloud_id
+        
+        # Cloud state: how long until it disappears (in seconds)
+        self.disappear_timer = None  # None = not touched yet
+        self.disappear_delay = 2.5  # Seconds before cloud vanishes after landing
+        
+        # Visual representation - cloud oval
+        self.id = canvas.create_oval(
+            x - 40, y - 20, x + 40, y + 20,
+            fill="#e0f4ff", outline="#87ceeb", width=2, tags="platform"
+        )
+        self.label = canvas.create_text(
+            x, y, text=str(cloud_id),
+            font=("Arial", 8, "bold"), fill="#4a90e2", tags="platform"
+        )
+    
+    def touch(self):
+        """
+        Called when frog lands on this cloud.
+        Starts the disappear countdown.
+        """
+        if self.disappear_timer is None:
+            self.disappear_timer = self.disappear_delay
+    
+    def update(self, dt):
+        """
+        Update cloud state each frame.
+        Decrements disappear timer and fades appearance.
+        """
+        if self.disappear_timer is not None:
+            self.disappear_timer -= dt
+            
+            # Fade out effect: cloud becomes lighter as it disappears
+            progress = 1.0 - (self.disappear_timer / self.disappear_delay)
+            if progress < 0.7:
+                # Still mostly visible
+                self.canvas.itemconfig(self.id, fill="#e0f4ff")
+            else:
+                # Almost gone - very faint
+                self.canvas.itemconfig(self.id, fill="#f0f8ff", outline="#d0e8ff")
+    
+    def is_solid(self):
+        """Check if cloud is still a solid platform."""
+        return self.disappear_timer is None or self.disappear_timer > 0
+    
+    def is_visible(self):
+        """Check if cloud should be drawn."""
+        return self.disappear_timer is None or self.disappear_timer > -0.5
+
+
+# ============================================================================
+# FALLING OBSTACLE - Deadly stars that kill frog on contact
+# ============================================================================
+class FallingObstacle:
+    """
+    Stars that fall from the sky and are deadly hazards.
+    If frog touches a star, frog dies and game ends.
+    Stars are RED 5-pointed shapes.
     """
     
     def __init__(self, canvas, x_pos, speed=4.0):
         self.canvas = canvas
         self.x = x_pos  # Horizontal position (stays constant)
-        self.y = -20    # Start above screen
+        self.y = -30    # Start above screen
         self.speed = speed  # Vertical fall speed
-        # Draw as white star
-        self.id = canvas.create_oval(0, 0, 0, 0, fill="#ffff99", outline="#ffcc00", width=2)
+        
+        # Draw star shape (5-pointed star using polygon)
+        self.id = canvas.create_polygon(
+            x_pos, self.y,           # Top point
+            x_pos + 8, self.y + 8,   # Upper right
+            x_pos + 18, self.y + 8,  # Right point
+            x_pos + 11, self.y + 14, # Lower right
+            x_pos + 14, self.y + 24, # Bottom right
+            x_pos, self.y + 18,      # Bottom center
+            x_pos - 14, self.y + 24, # Bottom left
+            x_pos - 11, self.y + 14, # Lower left
+            x_pos - 18, self.y + 8,  # Left point
+            x_pos - 8, self.y + 8,   # Upper left
+            fill="#ff6b6b", outline="#cc0000", width=2, tags="hazard"
+        )
     
     def update(self):
-        """Update item position (falls downward)."""
+        """Update falling position downward."""
         self.y += self.speed
-        # Draw item at new position
+        # Redraw star at new position using polygon points
         self.canvas.coords(
             self.id,
-            self.x - GameConfig.ITEM_W // 2,
-            self.y - GameConfig.ITEM_H // 2,
-            self.x + GameConfig.ITEM_W // 2,
-            self.y + GameConfig.ITEM_H // 2
+            self.x, self.y,
+            self.x + 8, self.y + 8,
+            self.x + 18, self.y + 8,
+            self.x + 11, self.y + 14,
+            self.x + 14, self.y + 24,
+            self.x, self.y + 18,
+            self.x - 14, self.y + 24,
+            self.x - 11, self.y + 14,
+            self.x - 18, self.y + 8,
+            self.x - 8, self.y + 8,
         )
     
     def off_screen(self):
-        """Check if item has fallen off bottom of screen."""
-        return self.y > GameConfig.HEIGHT + 30
+        """Check if star has fallen off bottom of screen."""
+        return self.y > GameConfig.HEIGHT + 50
     
-    def collides_with(self, player):
+    def collides_with(self, frog):
         """
-        Check collision between item and player.
-        Uses axis-aligned bounding box collision.
+        Check collision between deadly star and frog.
+        Uses simple distance-based collision detection.
         """
-        px1 = player.x - GameConfig.PLAYER_W // 2
-        py1 = player.y - GameConfig.PLAYER_H
-        px2 = player.x + GameConfig.PLAYER_W // 2
-        py2 = player.y
-        
-        ix1 = self.x - GameConfig.ITEM_W // 2
-        iy1 = self.y - GameConfig.ITEM_H // 2
-        ix2 = self.x + GameConfig.ITEM_W // 2
-        iy2 = self.y + GameConfig.ITEM_H // 2
-        
-        # Bounding box intersection test
-        return not (px2 < ix1 or px1 > ix2 or py2 < iy1 or py1 > iy2)
-
-
-# ============================================================================
-# CLOUD VISUALIZATION - Draw clouds on screen
-# ============================================================================
-class CloudVisual:
-    """Represents a visual cloud platform on screen."""
-    
-    def __init__(self, canvas, x, y):
-        self.canvas = canvas
-        self.x = x
-        self.y = y
-        # Draw cloud as light blue oval
-        self.id = canvas.create_oval(
-            x - 40, y - 20, x + 40, y + 20,
-            fill="#e0f4ff", outline="#87ceeb", width=2
-        )
+        dx = abs(self.x - frog.x)
+        dy = abs(self.y - frog.y)
+        # Star touches frog if distance is small enough
+        return (dx < 25) and (dy < 30)
 
 
 # ============================================================================
@@ -489,7 +606,7 @@ class CloudCatcherGame:
     def __init__(self):
         # Initialize Tkinter window
         self.root = tk.Tk()
-        self.root.title("Cloud Catchers - AI-Driven Platformer")
+        self.root.title("Cloud Catchers - Frog Platformer")
         self.root.resizable(False, False)
         
         # Create canvas for rendering
@@ -511,22 +628,21 @@ class CloudCatcherGame:
         self.saved_data = self.data_layer.load()
         
         # Initialize game state
-        self.player = Player(self.canvas, self.cloud_graph)
-        self.items = []
-        self.items_collected = 0
-        self.sequence = None  # Current item sequence
+        self.frog = Frog(self.canvas, self.cloud_graph)
+        self.obstacles = []  # Falling stars
+        self.cloud_platforms = []  # Cloud platforms
+        self.obstacles_dodged = 0
+        self.sequence = None  # Current obstacle sequence
         self.sequence_time = 0.0  # Time elapsed in current sequence
         self.game_over = False
-        self.spawn_timer = None
         
         # Best score tracking
         self.best_score = self.saved_data["best_score"]
         
-        # Visualize clouds
-        self.cloud_visuals = []
-        for cloud_pos in self.cloud_graph.nodes:
-            visual = CloudVisual(self.canvas, cloud_pos[0], cloud_pos[1])
-            self.cloud_visuals.append(visual)
+        # Create cloud platforms
+        for i, cloud_pos in enumerate(self.cloud_graph.nodes):
+            platform = CloudPlatform(self.canvas, cloud_pos[0], cloud_pos[1], i)
+            self.cloud_platforms.append(platform)
         
         # Setup input handlers
         self.draw_scene()
@@ -544,17 +660,17 @@ class CloudCatcherGame:
         )
         # Draw title
         self.canvas.create_text(
-            12, 12, anchor="nw", text="Cloud Catchers",
+            12, 12, anchor="nw", text="Cloud Catchers - Frog Platformer",
             font=("Arial", 18, "bold"), fill="white", tags="background"
         )
     
     def bind_controls(self):
-        """Bind keyboard controls to player actions."""
-        self.root.bind("<Left>", self.player.move_left)
-        self.root.bind("<Right>", self.player.move_right)
-        self.root.bind("<space>", self.player.jump)
-        self.root.bind("<KeyRelease-Left>", self.player.stop)
-        self.root.bind("<KeyRelease-Right>", self.player.stop)
+        """Bind keyboard controls to frog actions."""
+        self.root.bind("<Left>", self.frog.move_left)
+        self.root.bind("<Right>", self.frog.move_right)
+        self.root.bind("<space>", self.frog.jump)
+        self.root.bind("<KeyRelease-Left>", self.frog.stop)
+        self.root.bind("<KeyRelease-Right>", self.frog.stop)
         self.root.bind("<r>", self.restart)
         self.root.bind("<R>", self.restart)
     
@@ -564,20 +680,25 @@ class CloudCatcherGame:
         self.analytics.new_game()
         
         # Reset game state
-        self.items_collected = 0
+        self.obstacles_dodged = 0
         self.game_over = False
-        self.player.reset()
+        self.frog.reset()
         
-        # Clear any leftover items
-        for item in self.items:
-            self.canvas.delete(item.id)
-        self.items.clear()
+        # Clear any leftover obstacles
+        for obstacle in self.obstacles:
+            self.canvas.delete(obstacle.id)
+        self.obstacles.clear()
         
-        # Generate new sequence using IDS
+        # Reset cloud platforms
+        for cloud in self.cloud_platforms:
+            cloud.disappear_timer = None
+        
+        # Generate new obstacle sequence using IDS
         self.sequence = self.sequence_generator.generate_sequence(
             GameConfig.IDS_MAX_DEPTH
         )
         self.sequence_time = 0.0
+        self._spawned_obstacles = set()
         
         # Start main game loop
         self.loop()
@@ -587,86 +708,89 @@ class CloudCatcherGame:
         if self.game_over:
             return
         
-        # Update sequence time
-        self.sequence_time += 0.016  # ~60 FPS (16ms per frame)
+        # Increment time
+        dt = 0.016  # ~60 FPS (16ms per frame)
+        self.sequence_time += dt
         
-        # Update player physics
-        self.player.update()
+        # Update frog physics
+        frog_alive = self.frog.update(self.cloud_platforms)
+        if not frog_alive:
+            self.end_game("Frog fell off! Game Over!")
+            return
         
-        # Spawn items according to IDS-generated sequence
-        self._spawn_items_from_sequence()
+        # Update cloud platforms
+        for cloud in self.cloud_platforms:
+            cloud.update(dt)
         
-        # Update all items and check collisions
-        remaining_items = []
-        for item in self.items:
-            item.update()
+        # Spawn obstacles from IDS-generated sequence
+        self._spawn_obstacles_from_sequence()
+        
+        # Update all obstacles and check collisions
+        remaining_obstacles = []
+        for obstacle in self.obstacles:
+            obstacle.update()
             
-            # Check if player collected this item
-            if item.collides_with(self.player):
-                self.canvas.delete(item.id)
-                self.items_collected += 1
-                self.analytics.collected_item()
+            # Check if frog hit this deadly star
+            if obstacle.collides_with(self.frog):
+                self.end_game("Hit by a star! Game Over!")
+                return
+            
+            # Check if obstacle fell off screen
+            if obstacle.off_screen():
+                self.canvas.delete(obstacle.id)
+                self.obstacles_dodged += 1
+                self.analytics.dodged_obstacle()
                 
                 # Check for new achievements
-                unlocked = self.achievements.check(self.items_collected)
+                unlocked = self.achievements.check(self.obstacles_dodged)
                 if unlocked:
                     self.show_message(f"Achievement: {', '.join(unlocked)}")
                 continue
             
-            # Check if item fell off screen
-            if item.off_screen():
-                self.canvas.delete(item.id)
-                # Sequence failed - player missed an item
-                self.end_game(f"Missed an item! Score: {self.items_collected}")
-                return
-            
-            remaining_items.append(item)
+            remaining_obstacles.append(obstacle)
         
-        self.items = remaining_items
+        self.obstacles = remaining_obstacles
         
         # Update best score
-        self.best_score = max(self.best_score, self.items_collected)
+        self.best_score = max(self.best_score, self.obstacles_dodged)
         
         # Draw UI
         self.update_ui()
         
-        # Check win condition
-        if self.items_collected >= 15:
-            self.end_game("You win! Press R to play again.")
+        # Check win condition - survive enough obstacles
+        if self.obstacles_dodged >= 10:
+            self.end_game("You survived! You win!")
             return
         
         # Schedule next frame
         self.root.after(16, self.loop)
     
-    def _spawn_items_from_sequence(self):
+    def _spawn_obstacles_from_sequence(self):
         """
-        Spawn items from the IDS-generated sequence based on timing.
-        Items are spawned when sequence_time reaches their spawn time.
+        Spawn obstacles from the IDS-generated sequence based on timing.
+        Obstacles are spawned when sequence_time reaches their spawn time.
         """
         if not self.sequence:
             return
         
         for i, (cloud_id, spawn_time) in enumerate(self.sequence):
-            # Check if it's time to spawn this item
+            # Check if it's time to spawn this obstacle
             if spawn_time <= self.sequence_time:
-                # Check if item already spawned
-                if not hasattr(self, '_spawned_items'):
-                    self._spawned_items = set()
-                
-                if i not in self._spawned_items:
-                    # Spawn item at cloud position
+                # Check if obstacle already spawned
+                if i not in self._spawned_obstacles:
+                    # Spawn obstacle at cloud position
                     cloud_x, _ = self.cloud_graph.get_node_position(cloud_id)
-                    item = Item(self.canvas, cloud_x, speed=3.0)
-                    self.items.append(item)
-                    self._spawned_items.add(i)
+                    obstacle = FallingObstacle(self.canvas, cloud_x, speed=3.5)
+                    self.obstacles.append(obstacle)
+                    self._spawned_obstacles.add(i)
     
     def update_ui(self):
         """Draw HUD showing score, best score, and controls."""
         self.canvas.delete("ui")
         
-        # Current score
+        # Current score - obstacles dodged
         self.canvas.create_text(
-            10, 40, anchor="nw", text=f"Items: {self.items_collected}",
+            10, 40, anchor="nw", text=f"Dodged: {self.obstacles_dodged}",
             font=("Arial", 14, "bold"), fill="white", tags="ui"
         )
         
@@ -679,7 +803,7 @@ class CloudCatcherGame:
         # Controls hint
         self.canvas.create_text(
             GameConfig.WIDTH - 10, 12, anchor="ne",
-            text="← → Jump: Space | Restart: R",
+            text="Move: <- -> | Jump: Space | Restart: R",
             font=("Arial", 10), fill="white", tags="ui"
         )
     
@@ -694,11 +818,11 @@ class CloudCatcherGame:
         self.root.after(1500, lambda: self.canvas.delete("message"))
     
     def end_game(self, text):
-        """End current sequence/game and show results."""
+        """End current game and show results."""
         self.game_over = True
         
         # Record analytics
-        self.analytics.completed_sequence()
+        self.analytics.survived_sequence()
         self.data_layer.save(self.best_score)
         
         # Draw game over screen
@@ -708,7 +832,7 @@ class CloudCatcherGame:
             tags="gameover"
         )
         self.canvas.create_text(
-            400, 250, text="Sequence Complete",
+            400, 250, text="Game Over",
             font=("Arial", 26, "bold"), fill="#2b5d8a", tags="gameover"
         )
         self.canvas.create_text(
@@ -717,7 +841,7 @@ class CloudCatcherGame:
         )
         self.canvas.create_text(
             400, 330,
-            text=f"Score: {self.items_collected}   Best: {self.best_score}",
+            text=f"Score: {self.obstacles_dodged}   Best: {self.best_score}",
             font=("Arial", 12), fill="#2b5d8a", tags="gameover"
         )
     
@@ -726,14 +850,16 @@ class CloudCatcherGame:
         self.canvas.delete("all")
         self.draw_scene()
         
-        # Redraw clouds
-        for visual in self.cloud_visuals:
-            CloudVisual(self.canvas, visual.x, visual.y)
+        # Reset frog
+        self.frog = Frog(self.canvas, self.cloud_graph)
+        self.obstacles = []
+        self._spawned_obstacles = set()
         
-        # Reset player
-        self.player = Player(self.canvas, self.cloud_graph)
-        self.items = []
-        self._spawned_items = set()
+        # Recreate cloud platforms
+        self.cloud_platforms = []
+        for i, cloud_pos in enumerate(self.cloud_graph.nodes):
+            platform = CloudPlatform(self.canvas, cloud_pos[0], cloud_pos[1], i)
+            self.cloud_platforms.append(platform)
         
         # Start new game
         self.start_game()
