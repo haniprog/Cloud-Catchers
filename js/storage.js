@@ -9,14 +9,21 @@ class DataLayer {
       const parsed = JSON.parse(stored);
       return {
         best_score: Number.parseInt(parsed.best_score ?? DEFAULT_SAVE_DATA.best_score, 10) || 0,
+        highest_level_unlocked: Number.parseInt(parsed.highest_level_unlocked ?? DEFAULT_SAVE_DATA.highest_level_unlocked, 10) || 1,
       };
     } catch (error) {
       return { ...DEFAULT_SAVE_DATA };
     }
   }
 
-  save(bestScore) {
-    window.localStorage.setItem(GameConfig.SAVE_KEY, JSON.stringify({ best_score: Number(bestScore) || 0 }));
+  save(bestScore, highestLevelUnlocked = DEFAULT_SAVE_DATA.highest_level_unlocked) {
+    window.localStorage.setItem(
+      GameConfig.SAVE_KEY,
+      JSON.stringify({
+        best_score: Number(bestScore) || 0,
+        highest_level_unlocked: Math.max(1, Number(highestLevelUnlocked) || 1),
+      }),
+    );
   }
 }
 
@@ -74,12 +81,12 @@ class AchievementService {
     this.unlocked = new Set();
   }
 
-  check(obstaclesDodged) {
+  check(obstaclesDodged, avatarLabel = "Frog") {
     const achievements = new Map([
       [1, "First Dodge"],
-      [3, "Cloud Hopper"],
-      [7, "Sky Dancer"],
-      [15, "Frog Master"],
+      [3, `${avatarLabel} Hopper`],
+      [7, `${avatarLabel} Dancer`],
+      [15, `${avatarLabel} Master`],
     ]);
 
     const newlyUnlocked = [];

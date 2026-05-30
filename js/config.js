@@ -18,6 +18,7 @@ const GameConfig = {
 
 const DEFAULT_SAVE_DATA = {
   best_score: 7022,
+  highest_level_unlocked: 1,
 };
 
 const DEFAULT_ANALYTICS_DATA = {
