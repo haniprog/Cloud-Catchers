@@ -101,10 +101,15 @@ class Frog {
         )
       ) {
         this.y = cloud.y - 40;
-        this.vy = this.jumpBoostReady ? -40 : -14;
-        this.jumpBoostReady = false;
-        if (this.jumpBoostFlightActive) {
-          this.jumpBoostFlightActive = false;
+        if (this.jumpBoostReady) {
+          this.vy = -40;
+          this.jumpBoostReady = false;
+          // keep boost flight active while the powered jump is still in progress
+        } else {
+          this.vy = -14;
+          if (this.jumpBoostFlightActive) {
+            this.jumpBoostFlightActive = false;
+          }
         }
         this.onGround = false;
         this.currentCloud = index;
