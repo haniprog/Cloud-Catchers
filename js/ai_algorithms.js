@@ -17,7 +17,8 @@ class CloudGraph {
   }
 
   _generateNodes() {
-    const startY = this.groundY - 70;
+    // keep the first cloud row well above the ground band
+    const startY = this.groundY - 110;
     this.nodes.push([Math.floor(this.width / 2), startY]);
     this.rowLookup[0] = 0;
     this.rowNodes.push([0]);

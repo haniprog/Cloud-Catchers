@@ -1,0 +1,13 @@
+{
+  "name": "cloud-catchers",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloud Catchers desktop wrapper for Windows",
+  "main": "electron-main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^36.0.0"
+  }
+}
