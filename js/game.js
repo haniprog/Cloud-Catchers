@@ -28,6 +28,7 @@ class Frog {
     this.starShieldTimer = 0;
     this.jumpBoostReady = false;
     this.jumpBoostFlightActive = false;
+    this.coinsCollected = 0;
   }
 
   reset() {
@@ -41,6 +42,7 @@ class Frog {
     this.starShieldTimer = 0;
     this.jumpBoostReady = false;
     this.jumpBoostFlightActive = false;
+    this.coinsCollected = 0;
   }
 
   moveLeft() {
@@ -121,6 +123,10 @@ class Frog {
         } else if (pickup === "magic") {
           this.jumpBoostReady = true;
           this.jumpBoostFlightActive = true;
+        }
+        // collect coin if present
+        if (typeof cloud.collectCoin === "function" && cloud.collectCoin()) {
+          this.coinsCollected += 1;
         }
         landingOnCloud = true;
         break;
@@ -361,6 +367,8 @@ class CloudPlatform {
     this.pickupType = this._rollPickupType();
     this.pickupCollected = false;
     this.pickupPhase = Math.random() * Math.PI * 2;
+    this.coin = false;
+    this.coinCollected = false;
   }
 
   _rollPickupType() {
@@ -401,6 +409,14 @@ class CloudPlatform {
 
     this.pickupCollected = true;
     return this.pickupType;
+  }
+
+  collectCoin() {
+    if (!this.coin || this.coinCollected) {
+      return false;
+    }
+    this.coinCollected = true;
+    return true;
   }
 
   draw(ctx, cameraOffsetY = 0) {
@@ -492,6 +508,24 @@ class CloudPlatform {
           ctx.fill();
           ctx.restore();
       }
+      ctx.restore();
+    }
+
+    // draw coin if present
+    if (this.coin && !this.coinCollected) {
+      ctx.save();
+      const floatY = drawY - 22 + Math.sin(Date.now() / 300 + this.pickupPhase) * 3;
+      ctx.fillStyle = "#ffd54a";
+      ctx.strokeStyle = "#d49a18";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(this.x, floatY, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "#fff6d6";
+      ctx.beginPath();
+      ctx.arc(this.x - 2, floatY - 1, 2.5, 0, Math.PI * 2);
+      ctx.fill();
       ctx.restore();
     }
     ctx.restore();
@@ -598,6 +632,14 @@ class CloudCatcherGame {
     this.hazardSpawnInterval = 1.6;
     this.spawnedObstacles = new Set();
     this.previewFrames = 0;
+    this.playMode = "continuous"; // or "levels"
+    this.levelNumber = 1;
+    this.levelConfig = null;
+    this.levelDoor = null;
+    this.coinsTotal = 0;
+    this.coinsCollected = 0;
+    this.levelCompleted = false;
+    this.overlayButtonBounds = null;
     // dev helper: force an altitude for previewing atmosphere stages (null = off)
     this.debugForceAltitude = null;
     this.cameraOffsetY = 0;
@@ -699,6 +741,10 @@ class CloudCatcherGame {
     this.sequenceGenerator = new IDSSequenceGenerator(this.cloudGraph);
     this.frog = new Frog(this.canvas, this.cloudGraph, this.selectedAvatarType);
     this.cloudPlatforms = this.cloudGraph.nodes.map((cloudPos, index) => new CloudPlatform(cloudPos[0], cloudPos[1], index, this.cloudGraph.getRow(index), groundY));
+    // clear any level data
+    this.levelDoor = null;
+    this.coinsTotal = 0;
+    this.coinsCollected = 0;
     // prepare deterministic ground decoration positions so they don't jitter
     const decorCount = 18;
     this._groundDecorPositions = [];
@@ -710,6 +756,76 @@ class CloudCatcherGame {
       const colorIndex = i % 4;
       this._groundDecorPositions.push({ fx, vy, colorIndex });
     }
+  }
+
+  // level setup: mark clouds with coins and create an exit door
+  _setupLevel(levelNum) {
+    const defs = {
+      1: { stars: false, coinCount: 6, rows: 40 },
+      2: { stars: true, coinCount: 8, rows: 60, slowStars: true },
+      3: { stars: true, coinCount: 10, rows: 80, slowStars: false },
+    };
+    this.levelNumber = Math.max(1, Math.min(3, Number(levelNum) || 1));
+    this.levelConfig = defs[this.levelNumber] || defs[1];
+    // clear previous coins
+    for (const cloud of this.cloudPlatforms) {
+      cloud.coin = false;
+      cloud.coinCollected = false;
+    }
+
+    // If we're in levels mode, build a single-path vertical cloud graph
+    if (this.playMode === "levels") {
+      const [width, height] = this._displaySize();
+      const groundY = this.sceneGroundY || Math.max(height - 56, Math.floor(height * 0.92));
+      // build a CloudGraph with one column and many rows to form a single path
+      this.cloudGraph = new CloudGraph(width, groundY, this.levelConfig.rows, 1, GameConfig.CLOUD_ROW_GAP, GameConfig.CLOUD_JUMP_RANGE);
+      this.sequenceGenerator = new IDSSequenceGenerator(this.cloudGraph);
+      this.cloudPlatforms = this.cloudGraph.nodes.map((cloudPos, index) => new CloudPlatform(cloudPos[0], cloudPos[1], index, this.cloudGraph.getRow(index), groundY));
+      // ensure frog references the new cloud graph and reset to start
+      if (this.frog) {
+        this.frog.cloudGraph = this.cloudGraph;
+        this.frog.reset();
+      }
+      for (const cloud of this.cloudPlatforms) {
+        if (cloud.pickupType === "magic") {
+          cloud.pickupType = null;
+        }
+        if (this.levelNumber === 1) {
+          cloud.pickupType = null;
+        }
+      }
+    }
+
+    // randomly assign coins to distinct clouds (avoid ground row)
+    const candidates = this.cloudPlatforms.filter((c) => c.row > 0);
+    let placed = 0;
+    while (placed < this.levelConfig.coinCount && candidates.length) {
+      const idx = Math.floor(Math.random() * candidates.length);
+      const cloud = candidates.splice(idx, 1)[0];
+      cloud.coin = true;
+      placed += 1;
+    }
+    this.coinsTotal = placed;
+    this.coinsCollected = 0;
+
+    // place door on the highest cloud (top-most row)
+    const topCloud = this.cloudPlatforms.reduce((best, c) => (c.y < (best?.y ?? Infinity) ? c : best), null);
+    if (topCloud) {
+      this.levelDoor = { x: topCloud.x, y: topCloud.y - 28, row: topCloud.row, w: 28, h: 36 };
+    } else {
+      this.levelDoor = null;
+    }
+
+    // adjust hazard behaviour for levels
+    if (!this.levelConfig.stars) {
+      this.hazardSpawnInterval = 9999; // effectively disable continuous stars
+    } else if (this.levelConfig.slowStars) {
+      this.hazardSpawnInterval = 2.2;
+    } else {
+      this.hazardSpawnInterval = 0.9;
+    }
+    // require reaching the top row to complete level
+    this.levelConfig.requiredRows = (this.levelConfig.rows || 0) - 1;
   }
 
   _getHeroRoster() {
@@ -1083,6 +1199,64 @@ class CloudCatcherGame {
     this.ctx.fillStyle = "rgba(225, 232, 241, 0.82)";
     this.ctx.font = "500 12px 'Segoe UI', Arial, sans-serif";
     this.ctx.fillText("Every hero shares one nemesis: falling stars.", panelX1 + 74, warningY1 + 28);
+    if (panelOptions.showModeOptions) {
+      const modeW = 120;
+      const modeH = 36;
+      const gap = 12;
+      const totalW = modeW * 2 + gap;
+      const modeX = panelX1 + Math.floor((panelW - totalW) / 2);
+      const modeY = cardY1 + cardH + 14;
+
+      // Continuous button
+      const contX1 = modeX;
+      const contY1 = modeY;
+      const contX2 = contX1 + modeW;
+      const contY2 = contY1 + modeH;
+      this.ctx.fillStyle = this.playMode === "continuous" ? "#71e0f8" : "#dfe8f5";
+      this._drawRoundedRect(contX1, contY1, contX2, contY2, 10, this.ctx.fillStyle, "", 0);
+      this.ctx.fillStyle = "#21183c";
+      this.ctx.font = "700 14px 'Segoe UI', Arial";
+      this.ctx.textAlign = "center";
+      this.ctx.fillText("Continuous", (contX1 + contX2) / 2, contY1 + 23);
+
+      // Levels button
+      const lvlX1 = contX2 + gap;
+      const lvlY1 = modeY;
+      const lvlX2 = lvlX1 + modeW;
+      const lvlY2 = lvlY1 + modeH;
+      this.ctx.fillStyle = this.playMode === "levels" ? "#ffe17c" : "#f3f0df";
+      this._drawRoundedRect(lvlX1, lvlY1, lvlX2, lvlY2, 10, this.ctx.fillStyle, "", 0);
+      this.ctx.fillStyle = "#21183c";
+      this.ctx.fillText("Play By Levels", (lvlX1 + lvlX2) / 2, lvlY1 + 23);
+      this.modeButtonBounds = { continuous: [contX1, contY1, contX2, contY2], levels: [lvlX1, lvlY1, lvlX2, lvlY2] };
+
+      // level quick selector immediately below mode buttons
+      if (this.playMode === "levels") {
+        this.levelButtonBounds = [];
+        const baseLX = contX1;
+        const baseLY = lvlY2 + 12;
+        const cardW = 46;
+        const gap2 = 10;
+        for (let i = 1; i <= 3; i += 1) {
+          const x1 = baseLX + (i - 1) * (cardW + gap2);
+          const y1 = baseLY;
+          const x2 = x1 + cardW;
+          const y2 = y1 + 40;
+          this.ctx.fillStyle = this.levelNumber === i ? "#a9e07a" : "#ffffff";
+          this._drawRoundedRect(x1, y1, x2, y2, 8, this.ctx.fillStyle, "", 0);
+          this.ctx.fillStyle = "#21183c";
+          this.ctx.font = "700 16px 'Segoe UI', Arial";
+          this.ctx.fillText("L" + i, (x1 + x2) / 2, y1 + 26);
+          this.levelButtonBounds.push([x1, y1, x2, y2]);
+        }
+      } else {
+        this.levelButtonBounds = null;
+      }
+    } else {
+      this.modeButtonBounds = null;
+      this.levelButtonBounds = null;
+    }
+
     if (panelOptions.showStartButton) {
       const buttonW = panelW - 44;
       const buttonH = 56;
@@ -1130,6 +1304,26 @@ class CloudCatcherGame {
 
     for (const cloud of this.cloudPlatforms) {
       cloud.draw(this.ctx, cameraOffsetY);
+    }
+
+    // draw level exit door when in levels mode
+    if (this.playMode === "levels" && this.levelDoor) {
+      const d = this.levelDoor;
+      const drawX = d.x;
+      const drawY = d.y + cameraOffsetY;
+      this.ctx.save();
+      this.ctx.fillStyle = "#6b3a1a";
+      this.ctx.strokeStyle = "#321a0c";
+      this.ctx.lineWidth = 2;
+      this.ctx.fillRect(drawX - d.w / 2, drawY - d.h / 2, d.w, d.h);
+      this.ctx.strokeRect(drawX - d.w / 2, drawY - d.h / 2, d.w, d.h);
+      // small keyhole
+      this.ctx.fillStyle = "#f2d36b";
+      this.ctx.beginPath();
+      this.ctx.arc(drawX, drawY - 4, 3, 0, Math.PI * 2);
+      this.ctx.fill();
+      this.ctx.fillRect(drawX - 2, drawY - 2, 4, 8);
+      this.ctx.restore();
     }
 
     // compute altitude for ground translate (rows proxy)
@@ -1479,7 +1673,7 @@ class CloudCatcherGame {
     this.ctx.clearRect(0, 0, width, height);
     this._drawLandingBackdrop(width, height);
     this._drawLandingIntro(width, height);
-    this._drawHeroPanel(width, height, this.selectedCatcher, { showStartButton: false });
+    this._drawHeroPanel(width, height, this.selectedCatcher, { showStartButton: true, showModeOptions: true });
     this._drawLandingFooter(width, height);
   }
 
@@ -1491,12 +1685,55 @@ class CloudCatcherGame {
     this.ctx.clearRect(0, 0, width, height);
     this._drawLandingBackdrop(width, height);
     this._drawLandingIntro(width, height);
-    this._drawHeroPanel(width, height, this.selectedCatcher, { showStartButton: true });
+    this._drawHeroPanel(width, height, this.selectedCatcher, { showStartButton: true, showModeOptions: true });
     this._drawLandingFooter(width, height);
   }
 
   _handleCanvasClick(event) {
     const { x, y } = this._getCanvasPoint(event);
+
+    if (this.gameOver && this.overlayButtonBounds) {
+      const home = this.overlayButtonBounds.home;
+      const next = this.overlayButtonBounds.next;
+      const retry = this.overlayButtonBounds.retry;
+      if (home && home[0] <= x && x <= home[2] && home[1] <= y && y <= home[3]) {
+        this.levelCompleted = false;
+        this.gameOver = false;
+        this.onHomeScreen = true;
+        this.onSelectScreen = false;
+        this._setHomeShellState(true);
+        this._setSelectShellState(false);
+        this._setGameShellState(false);
+        this.drawHomeScreen();
+        return;
+      }
+      if (next && next[0] <= x && x <= next[2] && next[1] <= y && y <= next[3]) {
+        this.levelNumber = Math.min(3, this.levelNumber + 1);
+        this.levelCompleted = false;
+        this.gameOver = false;
+        this.playMode = "levels";
+        this.onHomeScreen = false;
+        this.onSelectScreen = false;
+        this._setHomeShellState(false);
+        this._setSelectShellState(false);
+        this._setGameShellState(true);
+        this.startGame();
+        this.drawScene();
+        return;
+      }
+      if (retry && retry[0] <= x && x <= retry[2] && retry[1] <= y && y <= retry[3]) {
+        this.levelCompleted = false;
+        this.gameOver = false;
+        this.onHomeScreen = false;
+        this.onSelectScreen = false;
+        this._setHomeShellState(false);
+        this._setSelectShellState(false);
+        this._setGameShellState(true);
+        this.startGame();
+        this.drawScene();
+        return;
+      }
+    }
 
     if (this.onHomeScreen && !this.gameOver) {
       if (
@@ -1518,6 +1755,34 @@ class CloudCatcherGame {
   }
 
   _handleSelectScreenClick(x, y) {
+    // mode button clicks
+    if (this.modeButtonBounds) {
+      const m = this.modeButtonBounds;
+      const [c1, c2, c3, c4] = m.continuous;
+      if (c1 <= x && x <= c3 && c2 <= y && y <= c4) {
+        this.playMode = "continuous";
+        this.drawSelectScreen();
+        return;
+      }
+      const [l1, l2, l3, l4] = m.levels;
+      if (l1 <= x && x <= l3 && l2 <= y && y <= l4) {
+        this.playMode = "levels";
+        this.drawSelectScreen();
+        return;
+      }
+    }
+
+    // level quick-selector
+    if (this.levelButtonBounds) {
+      for (let i = 0; i < this.levelButtonBounds.length; i += 1) {
+        const [x1, y1, x2, y2] = this.levelButtonBounds[i];
+        if (x1 <= x && x <= x2 && y1 <= y && y <= y2) {
+          this.levelNumber = i + 1;
+          this.drawSelectScreen();
+          return;
+        }
+      }
+    }
     for (let index = 0; index < this.selectCardBounds.length; index += 1) {
       const [x1, y1, x2, y2] = this.selectCardBounds[index];
       if (x1 <= x && x <= x2 && y1 <= y && y <= y2) {
@@ -1536,7 +1801,14 @@ class CloudCatcherGame {
     }
 
     if (this.selectButtonBounds && this.selectButtonBounds[0] <= x && x <= this.selectButtonBounds[2] && this.selectButtonBounds[1] <= y && y <= this.selectButtonBounds[3]) {
-      this.beginGame();
+      // start the actual game from the select screen
+      this.onHomeScreen = false;
+      this.onSelectScreen = false;
+      this._setHomeShellState(false);
+      this._setSelectShellState(false);
+      this._setGameShellState(true);
+      this.startGame();
+      this.drawScene();
     }
   }
 
@@ -1642,16 +1914,16 @@ class CloudCatcherGame {
   }
 
   beginGame() {
+    // Open the character/mode Select screen instead of starting immediately
     this.onHomeScreen = false;
-    this.onSelectScreen = false;
+    this.onSelectScreen = true;
     this._setHomeShellState(false);
-    this._setSelectShellState(false);
-    this._setGameShellState(true);
+    this._setSelectShellState(true);
+    this._setGameShellState(false);
     if (!this.isFullscreen) {
       this.toggleFullscreen(true);
     }
-    this.startGame();
-    this.drawScene();
+    this.drawSelectScreen();
   }
 
   startGame() {
@@ -1675,6 +1947,15 @@ class CloudCatcherGame {
     this.pendingMessage = "";
     this._loopRunning = true;
     this.previewFrames = 45;
+    this.levelCompleted = false;
+    this.overlayButtonBounds = null;
+    // if playing a level, prepare its layout (coins, door, hazards)
+    if (this.playMode === "levels") {
+      this._setupLevel(this.levelNumber);
+      if (this.frog) {
+        this.frog.coinsCollected = 0;
+      }
+    }
   }
 
   _updateGame(dt) {
@@ -1704,13 +1985,16 @@ class CloudCatcherGame {
     this.bestScore = Math.max(this.bestScore, this.altitudeScore);
 
     this._ensureCloudContinuity();
+    const hazardEnabled = this.playMode !== "levels" ? true : Boolean(this.levelConfig && this.levelConfig.stars);
     if (this.frog.jumpBoostFlightActive) {
       this.obstacles = [];
       this.lastHazardSpawn = 0;
     } else {
       this.sequenceTime += dt;
-      this._spawnObstaclesFromSequence();
-      this._continuousHazardSpawner(dt);
+      if (hazardEnabled) {
+        this._spawnObstaclesFromSequence();
+        this._continuousHazardSpawner(dt);
+      }
 
       const altitudeLift = this.cameraOffsetY || 0;
       const speedBoost = Math.min(6, altitudeLift / 160);
@@ -1719,7 +2003,7 @@ class CloudCatcherGame {
         obstacle.update(speedBoost);
 
         if (obstacle.collidesWith(this.frog)) {
-          if (this.frog.starShieldTimer > 0) {
+          if (this.frog.starShieldTimer > 0 || this.frog.jumpBoostFlightActive) {
             continue;
           }
           this.endGame("Hit by a star! Game Over!");
@@ -1744,6 +2028,21 @@ class CloudCatcherGame {
 
     this.bestScore = Math.max(this.bestScore, this.obstaclesDodged);
     this.updateUi();
+
+    // level completion check
+    if (this.playMode === "levels" && this.levelConfig && this.levelDoor) {
+      const door = this.levelDoor;
+      const frog = this.frog;
+      const meetsCoins = (frog.coinsCollected || 0) >= (this.coinsTotal || 0);
+      const meetsRows = (frog.currentCloudRow || 0) >= (this.levelConfig.requiredRows || 0);
+      const dx = Math.abs((frog.x || 0) - door.x);
+      const dy = Math.abs((frog.y || 0) - door.y);
+      const inDoorRange = dx < (door.w / 1.5) && dy < (door.h / 1.5);
+      if (meetsCoins && meetsRows && inDoorRange) {
+        this._completeLevel();
+        return;
+      }
+    }
   }
 
   _spawnObstaclesFromSequence() {
@@ -1783,6 +2082,11 @@ class CloudCatcherGame {
       return;
     }
 
+    // Levels end at the door, so do not generate extra clouds in level mode.
+    if (this.playMode === "levels") {
+      return;
+    }
+
     const frogY = this.frog?.y;
     const bufferPx = this.cloudGraph.rowGap * 6;
     const rowsToAdd = 4;
@@ -1809,6 +2113,10 @@ class CloudCatcherGame {
   }
 
   updateUi() {
+    if (this.playMode === "levels") {
+      return;
+    }
+
     const [width] = this._displaySize();
     const boxX1 = 14;
     const boxY1 = 14;
@@ -1836,7 +2144,7 @@ class CloudCatcherGame {
   }
 
   _drawOverlayMessage() {
-    if (!this.pendingMessage) {
+    if (!this.pendingMessage || (this.playMode === "levels" && !this.levelCompleted)) {
       return;
     }
 
@@ -1853,17 +2161,59 @@ class CloudCatcherGame {
 
   _drawGameOverOverlay() {
     const [width, height] = this._displaySize();
+    const boxX1 = width / 2 - 260;
+    const boxY1 = height / 2 - 110;
+    const boxX2 = width / 2 + 260;
+    const boxY2 = height / 2 + 110;
+    this.overlayButtonBounds = {};
     this.ctx.save();
-    this._drawRoundedRect(width / 2 - 250, height / 2 - 80, width / 2 + 250, height / 2 + 80, 18, "#ffffff", "#2b5d8a", 3);
+    this._drawRoundedRect(boxX1, boxY1, boxX2, boxY2, 18, "#ffffff", "#2b5d8a", 3);
     this.ctx.fillStyle = "#2b5d8a";
     this.ctx.font = 'bold 26px Arial, sans-serif';
     this.ctx.textAlign = "center";
     this.ctx.textBaseline = "middle";
-    this.ctx.fillText("Game Over", width / 2, height / 2 - 30);
+    const title = this.levelCompleted ? "Level Complete" : "Game Over";
+    this.ctx.fillText(title, width / 2, boxY1 + 40);
     this.ctx.font = '14px Arial, sans-serif';
-    this.ctx.fillText(this.gameOverText, width / 2, height / 2 + 10);
-    this.ctx.font = '12px Arial, sans-serif';
-    this.ctx.fillText(`Score: ${this.altitudeScore}   Best: ${this.bestScore}`, width / 2, height / 2 + 40);
+    this.ctx.fillText(this.gameOverText, width / 2, boxY1 + 80);
+    if (this.playMode !== "levels") {
+      this.ctx.font = '12px Arial, sans-serif';
+      this.ctx.fillText(`Score: ${this.altitudeScore}   Best: ${this.bestScore}`, width / 2, boxY1 + 104);
+    }
+
+    const buttonW = 180;
+    const buttonH = 38;
+    const buttonY = boxY2 - buttonH - 18;
+    const homeX1 = width / 2 - buttonW - 12;
+    const homeX2 = homeX1 + buttonW;
+    const otherX1 = width / 2 + 12;
+    const otherX2 = otherX1 + buttonW;
+
+    this._drawRoundedRect(homeX1, buttonY, homeX2, buttonY + buttonH, 12, "#71e0f8", "", 0);
+    this.ctx.fillStyle = "#21183c";
+    this.ctx.font = '700 14px Arial, sans-serif';
+    this.ctx.fillText("Back Home", (homeX1 + homeX2) / 2, buttonY + buttonH / 2);
+    this.overlayButtonBounds.home = [homeX1, buttonY, homeX2, buttonY + buttonH];
+
+    if (this.levelCompleted && this.playMode === "levels") {
+      if (this.levelNumber < 3) {
+        this._drawRoundedRect(otherX1, buttonY, otherX2, buttonY + buttonH, 12, "#ffe17c", "", 0);
+        this.ctx.fillStyle = "#21183c";
+        this.ctx.fillText("Next Level", (otherX1 + otherX2) / 2, buttonY + buttonH / 2);
+        this.overlayButtonBounds.next = [otherX1, buttonY, otherX2, buttonY + buttonH];
+      } else {
+        this._drawRoundedRect(otherX1, buttonY, otherX2, buttonY + buttonH, 12, "#ffe17c", "", 0);
+        this.ctx.fillStyle = "#21183c";
+        this.ctx.fillText("Play Again", (otherX1 + otherX2) / 2, buttonY + buttonH / 2);
+        this.overlayButtonBounds.retry = [otherX1, buttonY, otherX2, buttonY + buttonH];
+      }
+    } else {
+      this._drawRoundedRect(otherX1, buttonY, otherX2, buttonY + buttonH, 12, "#ffe17c", "", 0);
+      this.ctx.fillStyle = "#21183c";
+      this.ctx.fillText("Play Again", (otherX1 + otherX2) / 2, buttonY + buttonH / 2);
+      this.overlayButtonBounds.retry = [otherX1, buttonY, otherX2, buttonY + buttonH];
+    }
+
     this.ctx.restore();
   }
 
@@ -1884,6 +2234,23 @@ class CloudCatcherGame {
     this.analytics.data.last_score = this.altitudeScore;
     this.analytics.survivedSequence();
     this.dataLayer.save(this.bestScore);
+    this.analytics.save();
+  }
+
+  _completeLevel() {
+    this.gameOver = true;
+    this.levelCompleted = true;
+    this.gameOverText = `Level ${this.levelNumber} Complete!`;
+    this.showMessage(`Level ${this.levelNumber} Complete!`);
+    if (this.levelDoor && this.frog) {
+      this.frog.x = this.levelDoor.x;
+      this.frog.y = this.levelDoor.y + this.levelDoor.h * 0.75;
+      this.frog.vx = 0;
+      this.frog.vy = 0;
+      this.frog.onGround = true;
+    }
+    this.overlayButtonBounds = null;
+    this.analytics.data.last_score = this.altitudeScore;
     this.analytics.save();
   }
 

@@ -100,6 +100,19 @@ class CloudGraph {
     const farEnough = (candidate, positions) => positions.every((existing) => Math.abs(candidate - existing) >= minSpacing);
 
     const positions = [];
+    const row = this.rowLayouts.length;
+
+    if (this.columns === 1 && previousPositions.length === 1) {
+      const parentX = previousPositions[0];
+      const maxShift = Math.max(80, Math.floor(this.jumpRange * 0.75));
+      const minShift = Math.min(maxShift - 20, Math.max(40, Math.floor(maxShift * 0.45)));
+      const preferredDirection = row % 2 === 0 ? -1 : 1;
+      const direction = Math.random() < 0.75 ? preferredDirection : -preferredDirection;
+      const edgeBias = Math.random() < 0.35 ? (direction * this._randomInt(12, 40)) : 0;
+      const shift = this._randomInt(minShift, maxShift);
+      const candidate = clamp(parentX + direction * shift + edgeBias);
+      return [candidate];
+    }
 
     for (const parentX of previousPositions) {
       let candidate = null;
@@ -148,7 +161,7 @@ class CloudGraph {
 
     const unique = [...new Set(positions.map((position) => Math.trunc(position)))].sort((left, right) => left - right);
 
-    if (unique.length < 2) {
+    if (unique.length < Math.max(1, this.columns)) {
       const anchor = unique.length ? unique[0] : previousPositions[0];
       const fallback = clamp(anchor + (Math.random() < 0.5 ? -1 : 1) * Math.max(80, Math.floor(this.jumpRange / 2)));
       if (farEnough(fallback, unique)) {
@@ -156,7 +169,7 @@ class CloudGraph {
       }
     }
 
-    return unique.slice(0, Math.max(2, this.columns)).sort((left, right) => left - right);
+    return unique.slice(0, Math.max(1, this.columns)).sort((left, right) => left - right);
   }
 
   _randomInt(min, max) {
