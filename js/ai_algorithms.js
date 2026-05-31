@@ -197,12 +197,14 @@ class CloudGraph {
   }
 }
 
+// BFS validation: checks whether the candidate route can actually be reached across the cloud graph.
 class BFSSolver {
   isSequenceSurvivable(cloudGraph, route) {
     if (!route || !route.length) {
       return false;
     }
 
+    // BFS starts here.
     const goal = route[route.length - 1];
     const visited = new Set([route[0]]);
     const queue = [route[0]];
@@ -221,10 +223,12 @@ class BFSSolver {
       }
     }
 
+    // BFS ends here when the queue is exhausted without reaching the goal route node.
     return false;
   }
 }
 
+// IDS orchestration: gradually increases the search depth until it finds a route worth using.
 class IDSSequenceGenerator {
   constructor(cloudGraph) {
     this.cloudGraph = cloudGraph;
@@ -235,6 +239,7 @@ class IDSSequenceGenerator {
   generateSequence(targetDepth, maxAttempts = 30) {
     const maxDepth = Math.min(targetDepth, this.cloudGraph.goalRow);
 
+    // IDS starts here: try depth 1, then 2, then deeper until the target depth.
     for (let depth = 1; depth <= maxDepth; depth += 1) {
       const route = this._depthLimitedSearch(depth);
       if (route && this.bfsSolver.isSequenceSurvivable(this.cloudGraph, route)) {
@@ -242,6 +247,7 @@ class IDSSequenceGenerator {
       }
     }
 
+    // IDS ends here with a fallback route if no depth-limited route survives the BFS check.
     const route = this._fallbackRoute();
     return this._buildSequence(route);
   }
@@ -249,9 +255,11 @@ class IDSSequenceGenerator {
   _depthLimitedSearch(depthLimit) {
     const targetRow = Math.min(depthLimit, this.cloudGraph.goalRow);
 
+    // DLS explores only up to the current depth limit.
     const recurse = (nodeId, depthRemaining, path, visited) => {
       if (depthRemaining === 0) {
         if (this.cloudGraph.getRow(nodeId) >= targetRow) {
+          // DLS ends successfully when the current depth limit reaches the target row.
           return path;
         }
         return null;
@@ -286,6 +294,7 @@ class IDSSequenceGenerator {
   }
 
   _buildSequence(route) {
+    // The accepted route is converted into the spawn sequence used by the game loop.
     return {
       route,
       hazards: this._buildHazards(route),

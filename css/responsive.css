@@ -1,0 +1,80 @@
+body.home-screen,
+body.select-screen,
+body.game-screen {
+  padding: 0;
+  overflow: hidden;
+}
+
+body.home-screen .app-shell,
+body.select-screen .app-shell,
+body.game-screen .app-shell {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  gap: 0;
+}
+
+body.home-screen .app-header,
+body.home-screen .app-footer,
+body.select-screen .app-header,
+body.select-screen .app-footer,
+body.game-screen .app-header,
+body.game-screen .app-footer {
+  display: none;
+}
+
+body.home-screen .game-frame,
+body.select-screen .game-frame,
+body.game-screen .game-frame {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  aspect-ratio: auto;
+  max-height: 100vh;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+body.home-screen #game-canvas,
+body.select-screen #game-canvas,
+body.game-screen #game-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+}
+
+@media (max-width: 820px) {
+  body {
+    padding: 12px;
+  }
+
+  .app-header,
+  .app-footer {
+    padding: 14px 16px;
+  }
+
+  .game-frame {
+    width: 100%;
+    aspect-ratio: 1230 / 712;
+  }
+}
+
+@media (max-width: 600px) {
+  .app-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .header-actions {
+    width: 100%;
+  }
+
+  .header-actions button {
+    flex: 1 1 0;
+  }
+}
