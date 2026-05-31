@@ -65,7 +65,7 @@ class Frog {
     return;
   }
 
-  update(cloudPlatforms, width, height, dt = 0.016) {
+  update(cloudPlatforms, width, height, dt = 0.016, effects = {}) {
     this.starShieldTimer = Math.max(0, this.starShieldTimer - dt);
 
     this.x += this.vx;
@@ -104,6 +104,7 @@ class Frog {
       ) {
         this.y = cloud.y - 40;
         if (this.jumpBoostReady) {
+          effects.onJump?.();
           this.vy = -40;
           this.jumpBoostReady = false;
         } else {
@@ -119,12 +120,15 @@ class Frog {
         const pickup = cloud.collectPickup();
         if (pickup === "umbrella") {
           this.starShieldTimer = 8;
+          effects.onPickup?.();
         } else if (pickup === "magic") {
           this.jumpBoostReady = true;
           this.jumpBoostFlightActive = true;
+          effects.onPickup?.();
         }
         if (typeof cloud.collectCoin === "function" && cloud.collectCoin()) {
           this.coinsCollected += 1;
+          effects.onCoin?.();
         }
         landingOnCloud = true;
         break;

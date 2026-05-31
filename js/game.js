@@ -21,6 +21,7 @@ class CloudCatcherGame {
     this.dataLayer = new DataLayer();
     this.analytics = new AnalyticsService();
     this.achievements = new AchievementService();
+    this.audio = new SoundEffects();
     this.savedData = this.dataLayer.load();
     this.bestScore = this.savedData.best_score;
     this.highestLevelUnlocked = this.savedData.highest_level_unlocked || 1;
@@ -63,6 +64,7 @@ class CloudCatcherGame {
     this._installResizeListeners();
     this._rebuildWorld();
     this.drawHomeScreen();
+    this.audio?.playStart();
     this._loop = this._loop.bind(this);
     requestAnimationFrame(this._loop);
   }
