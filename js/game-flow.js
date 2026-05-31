@@ -129,6 +129,19 @@ class CloudCatcherGameFlowExtensions {
     }
 
     if (stage === "levels") {
+      for (let index = 0; index < this.selectCardBounds.length; index += 1) {
+        const [x1, y1, x2, y2] = this.selectCardBounds[index];
+        if (x1 <= x && x <= x2 && y1 <= y && y <= y2) {
+          this.selectedCatcher = index;
+          this.selectedAvatarType = this._getSelectedAvatarType();
+          if (this.frog) {
+            this.frog.setAvatar(this.selectedAvatarType);
+          }
+          this.drawSelectScreen();
+          return;
+        }
+      }
+
       for (const node of this.levelNodeBounds) {
         const [x1, y1, x2, y2] = node.bounds;
         if (x1 <= x && x <= x2 && y1 <= y && y <= y2) {

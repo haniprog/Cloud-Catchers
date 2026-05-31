@@ -248,7 +248,7 @@ class CloudCatcherGame {
     return [
       {
         avatarType: "frog",
-        name: "Freddy",
+        name: "Hannah",
         tagline: "Springy hopper",
         emoji: "🐸",
         face: "#67e57b",
@@ -259,7 +259,7 @@ class CloudCatcherGame {
       },
       {
         avatarType: "rabbit",
-        name: "Ruby",
+        name: "Kristal",
         tagline: "Soft & swift",
         emoji: "🐰",
         face: "#ffd7eb",
@@ -270,7 +270,7 @@ class CloudCatcherGame {
       },
       {
         avatarType: "cat",
-        name: "Cathy",
+        name: "Mariella",
         tagline: "Curious climber",
         emoji: "🐱",
         face: "#ffd46d",
@@ -278,6 +278,17 @@ class CloudCatcherGame {
         glowMid: "rgba(255, 161, 72, 0.8)",
         glowOuter: "rgba(191, 104, 46, 0.42)",
         shadow: "rgba(255, 180, 92, 0.68)",
+      },
+      {
+        avatarType: "fox",
+        name: "Myles",
+        tagline: "Quick and sly",
+        emoji: "🦊",
+        face: "#ffb36b",
+        glowInner: "rgba(255, 230, 180, 0.95)",
+        glowMid: "rgba(255, 164, 84, 0.82)",
+        glowOuter: "rgba(186, 89, 33, 0.42)",
+        shadow: "rgba(255, 164, 96, 0.68)",
       },
     ];
   }
@@ -291,6 +302,7 @@ class CloudCatcherGame {
       frog: "Frog",
       rabbit: "Rabbit",
       cat: "Cat",
+      fox: "Fox",
     };
 
     return labels[avatarType] || "Frog";
@@ -608,35 +620,84 @@ class CloudCatcherGame {
   }
 
   _drawHeroPanel(width, height, selectedCatcher, panelOptions = {}) {
-    const compact = width < 1160;
-    const panelW = compact ? Math.min(width * 0.86, 750) : Math.min(width * 0.42, 760);
-    const panelH = compact ? Math.min(height * 0.58, 410) : Math.min(height * 0.63, 470);
-    const panelX1 = compact ? Math.floor(width * 0.07) : Math.floor(width - panelW - width * 0.03);
-    const panelY1 = compact ? Math.floor(height * 0.22) : Math.floor(height * 0.18);
+    const dockBottomLeft = panelOptions.dock === "bottom-left";
+    const dockBottomRight = panelOptions.dock === "bottom-right";
+    const docked = dockBottomLeft || dockBottomRight;
+    const compact = docked || width < 1160;
+    const panelW = docked ? Math.min(width * 0.26, 300) : (compact ? Math.min(width * 0.86, 750) : Math.min(width * 0.42, 760));
+    const panelH = docked ? Math.min(height * 0.20, 166) : (compact ? Math.min(height * 0.58, 410) : Math.min(height * 0.63, 470));
+    const panelX1 = dockBottomLeft ? 24 : (dockBottomRight ? Math.floor(width - panelW - 28) : (compact ? Math.floor(width * 0.07) : Math.floor(width - panelW - width * 0.03)));
+    const panelY1 = docked ? Math.floor(height - panelH - 28) : (compact ? Math.floor(height * 0.22) : Math.floor(height * 0.18));
     const panelX2 = Math.floor(panelX1 + panelW);
     const panelY2 = Math.floor(panelY1 + panelH);
 
-    this._drawRoundedRect(panelX1, panelY1, panelX2, panelY2, 30, "rgba(27, 33, 71, 0.54)", "rgba(255,255,255,0.16)", 1.5);
+    this._drawRoundedRect(panelX1, panelY1, panelX2, panelY2, 30, dockBottomLeft ? "rgba(18, 22, 46, 0.78)" : "rgba(27, 33, 71, 0.54)", "rgba(255,255,255,0.16)", 1.5);
 
     this.ctx.textAlign = "left";
     this.ctx.textBaseline = "alphabetic";
     this.ctx.fillStyle = "#f5f3fb";
-    this.ctx.font = "900 22px 'Trebuchet MS', 'Segoe UI', Arial, sans-serif";
-    this.ctx.fillText("Choose your catcher", panelX1 + 28, panelY1 + 46);
+    this.ctx.font = docked ? "900 16px 'Trebuchet MS', 'Segoe UI', Arial, sans-serif" : "900 22px 'Trebuchet MS', 'Segoe UI', Arial, sans-serif";
+    this.ctx.fillText("Choose your catcher", panelX1 + (docked ? 16 : 28), panelY1 + (docked ? 26 : 46));
 
     this.ctx.fillStyle = "rgba(216, 224, 240, 0.72)";
-    this.ctx.font = "500 12px 'Segoe UI', Arial, sans-serif";
+    this.ctx.font = docked ? "500 10px 'Segoe UI', Arial, sans-serif" : "500 12px 'Segoe UI', Arial, sans-serif";
     this.ctx.textAlign = "right";
-    this.ctx.fillText("3 HEROES", panelX2 - 26, panelY1 + 43);
+    const heroes = this._getHeroRoster();
+    this.ctx.fillText(`${heroes.length} HEROES`, panelX2 - (docked ? 14 : 26), panelY1 + (docked ? 23 : 43));
+
+    if (docked) {
+      const cardGap = 8;
+      const cardTop = panelY1 + 34;
+      const cardW = Math.floor((panelW - 40 - cardGap) / 2);
+      const cardH = Math.floor((panelH - 52 - cardGap) / 2);
+      const cardsX1 = panelX1 + 14;
+      this.selectCardBounds = [];
+
+      heroes.forEach((hero, index) => {
+        const column = index % 2;
+        const row = Math.floor(index / 2);
+        const x1 = cardsX1 + column * (cardW + cardGap);
+        const y1 = cardTop + row * (cardH + cardGap);
+        const x2 = x1 + cardW;
+        const y2 = y1 + cardH;
+        const selected = index === selectedCatcher;
+        this.selectCardBounds.push([x1, y1, x2, y2]);
+        this._drawRoundedRect(x1, y1, x2, y2, 12, selected ? "rgba(87, 88, 116, 0.96)" : "rgba(255,255,255,0.06)", selected ? "rgba(255,255,255,0.84)" : "rgba(255,255,255,0.12)", 1.1);
+        const orbCx = x1 + 18;
+        const orbCy = y1 + cardH / 2;
+        const orb = this.ctx.createRadialGradient(orbCx - 4, orbCy - 4, 4, orbCx, orbCy, 22);
+        orb.addColorStop(0, hero.glowInner);
+        orb.addColorStop(0.6, hero.glowMid);
+        orb.addColorStop(1, hero.glowOuter);
+        this.ctx.save();
+        this.ctx.shadowColor = hero.shadow;
+        this.ctx.shadowBlur = selected ? 14 : 9;
+        this.ctx.fillStyle = orb;
+        this.ctx.beginPath();
+        this.ctx.arc(orbCx, orbCy, 12, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.restore();
+        this.ctx.font = "16px 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif";
+        this.ctx.textAlign = "center";
+        this.ctx.fillText(hero.emoji, orbCx, orbCy + 1);
+        this.ctx.fillStyle = "#fbf8ff";
+        this.ctx.font = "900 11px 'Trebuchet MS', 'Segoe UI', Arial, sans-serif";
+        this.ctx.textAlign = "left";
+        this.ctx.fillText(hero.name, x1 + 34, y1 + 18);
+      });
+
+      this.selectButtonBounds = null;
+      this.modeButtonBounds = null;
+      this.levelButtonBounds = null;
+      return;
+    }
 
     const cardGap = compact ? 14 : 12;
     const cardY1 = panelY1 + 68;
     const cardH = compact ? Math.min(150, panelH * 0.43) : Math.min(165, panelH * 0.43);
-    const cardW = Math.floor((panelW - 56 - cardGap * 2) / 3);
+    const cardW = Math.floor((panelW - 56 - cardGap * (heroes.length - 1)) / heroes.length);
     const cardsX1 = panelX1 + 28;
     this.selectCardBounds = [];
-
-    const heroes = this._getHeroRoster();
 
     heroes.forEach((hero, index) => {
       const x1 = cardsX1 + index * (cardW + cardGap);

@@ -460,9 +460,10 @@ class CloudCatcherGameRenderingExtensions {
 
     const roster = this._getHeroRoster();
     const iconY = height * 0.26;
-    const iconXs = [width * 0.42, width * 0.5, width * 0.58];
+    const iconStartX = width * 0.34;
+    const iconStepX = width * 0.11;
     roster.forEach((hero, index) => {
-      const iconX = iconXs[index];
+      const iconX = iconStartX + iconStepX * index;
       const floatOffset = Math.sin(time * 0.0012 + index * 1.5) * 10;
       const orb = this.ctx.createRadialGradient(iconX - 8, iconY - 8, 6, iconX, iconY, 54);
       orb.addColorStop(0, hero.glowInner);
@@ -651,7 +652,7 @@ class CloudCatcherGameRenderingExtensions {
     const roster = this._getHeroRoster();
     const cardGap = 12;
     const cardTop = modalY1 + 112;
-    const cardW = Math.floor((modalW - 56 - cardGap * 2) / 3);
+    const cardW = Math.floor((modalW - 56 - cardGap * (roster.length - 1)) / roster.length);
     const cardH = 108;
     const startX = modalX1 + 24;
     this.selectCardBounds = [];
@@ -835,8 +836,9 @@ class CloudCatcherGameRenderingExtensions {
     this.ctx.textAlign = "center";
     this.ctx.fillText("TAP A NODE TO BEGIN", width * 0.5, frame.y2 - 18);
 
+    this._drawHeroPanel(width, height, this.selectedCatcher, { showModeOptions: false, dock: "bottom-right" });
+
     this.selectButtonBounds = null;
-    this.selectCardBounds = [];
     this.modePickerButtonBounds = null;
   }
 
