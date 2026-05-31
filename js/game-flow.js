@@ -300,7 +300,16 @@ class CloudCatcherGameFlowExtensions {
       cloud.disappearTimer = null;
     });
 
+    // if playing a level, prepare its layout (coins, door, hazards)
+    if (this.playMode === "levels") {
+      this._setupLevel(this.levelNumber);
+      if (this.frog) {
+        this.frog.coinsCollected = 0;
+      }
+    }
+
     // Algorithm output starts here: create the route/hazard plan that drives the upcoming run.
+    // Generate the sequence after level setup so IDS uses the correct CloudGraph for levels.
     this.sequence = this.sequenceGenerator.generateSequence(GameConfig.IDS_MAX_DEPTH);
     this.sequenceTime = 0;
     this.spawnedObstacles = new Set();
@@ -309,13 +318,6 @@ class CloudCatcherGameFlowExtensions {
     this.previewFrames = 45;
     this.levelCompleted = false;
     this.overlayButtonBounds = null;
-    // if playing a level, prepare its layout (coins, door, hazards)
-    if (this.playMode === "levels") {
-      this._setupLevel(this.levelNumber);
-      if (this.frog) {
-        this.frog.coinsCollected = 0;
-      }
-    }
   }
 
   _updateGame(dt) {

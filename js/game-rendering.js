@@ -39,7 +39,7 @@ class CloudCatcherGameRenderingExtensions {
     // compute altitude for ground translate (rows proxy)
     const altitudeRows = this.debugForceAltitude != null ? this.debugForceAltitude : (this.frog?.currentCloudRow || 0);
     const tSky = 8; // same scale as atmosphere entry
-    // ground slides down with the camera once the frog reaches the center of the screen
+    // ground slides down with the camera once the character reaches the center of the screen
     const groundOffsetProportion = Math.max(0, Math.min(1, altitudeRows / (tSky * 1.0)));
     const groundOffset = Math.max(0, cameraOffsetY);
     const groundAlpha = Math.max(0.08, 1 - groundOffsetProportion * 0.85);
