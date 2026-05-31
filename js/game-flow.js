@@ -14,6 +14,7 @@ class CloudCatcherGameFlowExtensions {
         this._setHomeShellState(true);
         this._setSelectShellState(false);
         this._setGameShellState(false);
+        this.audio?.playStart();
         this.drawHomeScreen();
         return;
       }
@@ -123,6 +124,7 @@ class CloudCatcherGameFlowExtensions {
 
       if (this.selectBackButtonBounds && this.selectBackButtonBounds[0] <= x && x <= this.selectBackButtonBounds[2] && this.selectBackButtonBounds[1] <= y && y <= this.selectBackButtonBounds[3]) {
         this.selectStage = "mode";
+        this.audio?.playStart();
         this.drawSelectScreen();
       }
       return;
@@ -283,6 +285,7 @@ class CloudCatcherGameFlowExtensions {
   }
 
   startGame() {
+    this.audio?.stopStart();
     this.analytics.newGame();
     this.obstaclesDodged = 0;
     this.altitudeScore = 0;
@@ -322,7 +325,11 @@ class CloudCatcherGameFlowExtensions {
 
     this.sequenceTime += dt;
     const [width, height] = this._displaySize();
-    const frogAlive = this.frog.update(this.cloudPlatforms, width, height, dt);
+    const frogAlive = this.frog.update(this.cloudPlatforms, width, height, dt, {
+      onCoin: () => this.audio?.playCoin(),
+      onPickup: () => this.audio?.playPickup(),
+      onJump: () => this.audio?.playJump(),
+    });
     if (!frogAlive) {
       this.endGame(`${this._getAvatarLabel()} fell off! Game Over!`);
       return;
@@ -363,7 +370,7 @@ class CloudCatcherGameFlowExtensions {
           if (this.frog.starShieldTimer > 0 || this.frog.jumpBoostFlightActive) {
             continue;
           }
-          this.endGame(`${this._getAvatarLabel()} got hit by a star! Game Over!`);
+          this.endGame(`${this._getAvatarLabel()} got hit by a star! Game Over!`, true);
           return;
         }
 
@@ -586,9 +593,13 @@ class CloudCatcherGameFlowExtensions {
     }, 1500);
   }
 
-  endGame(text) {
+  endGame(text, playHitSound = false) {
     this.gameOver = true;
     this.gameOverText = text;
+    if (playHitSound) {
+      this.audio?.playHit();
+    }
+    this.audio?.playGameOver();
     this.analytics.data.last_score = this.altitudeScore;
     this.analytics.survivedSequence();
     this.dataLayer.save(this.bestScore);
@@ -599,6 +610,7 @@ class CloudCatcherGameFlowExtensions {
     this.gameOver = true;
     this.levelCompleted = true;
     this.gameOverText = `Level ${this.levelNumber} Complete!`;
+    this.audio?.playGameOver();
     this.showMessage(`Level ${this.levelNumber} Complete!`);
     this.highestLevelUnlocked = Math.max(this.highestLevelUnlocked || 1, Math.min(3, this.levelNumber + 1));
     this.dataLayer.save(this.bestScore, this.highestLevelUnlocked);
